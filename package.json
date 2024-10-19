@@ -1,6 +1,6 @@
 {
-  "name": "logseq-plugin-gpt3-openai",
-  "author": "Brian Sunter",
+  "name": "logseq-plugin-gpt3-openai-by-jingjian",
+  "author": "景坚",
   "private": true,
   "version": "1.14.2",
   "main": "dist/index.html",
@@ -44,7 +44,7 @@
     "use-immer": "^0.8.1"
   },
   "logseq": {
-    "name": "logseq-plugin-gpt3-openai",
+    "name": "logseq-plugin-gpt3-openai-by-jingjian",
     "id": "_79n711y6e"
   },
   "peerDependencies": {

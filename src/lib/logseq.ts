@@ -91,3 +91,57 @@ export async function getAudioFile(content: string): Promise<File | null> {
   return file;
 }
 
+//新增函数
+/* export async function getImageUrlFromBlock(content: string): Promise<string | null> {
+  // 正则表达式匹配Markdown格式的URL
+  const markdownRegex = /\[.*\]\((https?:\/\/[^)]+)\)/;
+  // 正则表达式匹配一般格式的URL
+  const generalRegex = /(http[s]?:\/\/[^\s]+)/;
+
+  // 先尝试匹配Markdown格式的URL
+  const markdownMatch = content.match(markdownRegex);
+  if (markdownMatch && markdownMatch[1]) {
+    return markdownMatch[1];
+  }
+
+  // 如果没有找到Markdown格式的URL，再尝试匹配一般格式的URL
+  const generalUrls = content.match(generalRegex);
+  if (generalUrls && generalUrls.length > 0) {
+    // 假设第一个匹配的就是图片链接
+    return generalUrls[0];
+  }
+
+  // 如果两种匹配都没有找到合适的URL，则返回null
+  return null;
+} 
+
+}*/
+
+// 获取图片 URL
+export async function getImageUrlFromBlock(content: string): Promise<string | null> {
+  // 正则表达式匹配Markdown格式的URL
+  const markdownRegex = /\[.*\]\((https?:\/\/[^\)]+|[\w.-]+\/[^\)]+)\)/;
+
+  console.log('Content:', content);
+
+  // 先尝试匹配Markdown格式的URL
+  const markdownMatch = content.match(markdownRegex);
+  if (markdownMatch && markdownMatch[1]) {
+    console.log('Markdown match:', markdownMatch[1]);
+    return markdownMatch[1];
+  }
+
+  // 如果没有找到Markdown格式的URL，再尝试匹配一般格式的URL
+  const generalRegex = /(http[s]?:\/\/[^\s]+|[\w.-]+\/[^\s]+)/;
+  const generalUrls = content.match(generalRegex);
+  if (generalUrls && generalUrls.length > 0) {
+    console.log('General URLs:', generalUrls);
+    // 假设第一个匹配的就是图片链接
+    return generalUrls[0];
+  }
+
+  console.log('No matches found.');
+  return null;
+}
+
+

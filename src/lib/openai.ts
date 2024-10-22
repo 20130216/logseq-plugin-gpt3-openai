@@ -1,6 +1,10 @@
 import OpenAI from "openai";
 import "@logseq/libs";
 import { backOff } from "exponential-backoff";
+// import {CompletionChoice} from "openai/resources/completions";
+// import { ChatCompletion, ChatCompletionChoice, CompletionChoice, Choice } from '../../../node_modules/.pnpm/openai@4.67.3/node_modules/openai/src/resources/chat/completions';
+
+// import { ChatCompletion, ChatCompletionChoice, CompletionChoice, Choice } from 'openai/resources/chat/completions';
 
 export type DalleImageSize = '256' | '256x256' | '512' | '512x512' | '1024' | '1024x1024' | '1024x1792' | '1792x1024';
 export type DalleModel = 'dall-e-2' | 'dall-e-3';
@@ -437,7 +441,7 @@ function trimLeadingWhitespace(s: string): string {
 
 
 //新增函数1
-export async function openAIWithStreamGpts(
+/* export async function openAIWithStreamGpts(
   input: string,
   openAiOptions: OpenAIOptions,
   onContent: (content: string) => void,
@@ -446,7 +450,7 @@ export async function openAIWithStreamGpts(
   const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
 
   try {
-    if (options.gpts === "gpt-4-gizmo-g-B3hgivKK9") {
+    if (options.gpts == "gpt-4-gizmo-g-B3hgivKK9") {
       const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
       if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
         inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
@@ -555,7 +559,80 @@ export async function openAIWithStreamGpts(
   } finally {
     onStop();
   }
-}
+} */
+
+  export async function openAIWithStreamGpts(
+    input: string,
+    openAiOptions: OpenAIOptions,
+    onContent: (content: string) => void,
+    onStop: () => void
+  ): Promise<string | null> {
+    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+  
+    try {
+      // 移除硬编码的模型ID，使用传入的gpts作为模型ID
+      const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
+      if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
+        inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
+      }
+  
+      const body = {
+        messages: inputMessages,
+        temperature: options.temperature,
+        max_tokens: options.maxTokens,
+        top_p: 1,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        model: options.gpts,
+        stream: false,
+        ...(options.gpts ? { gpts: options.gpts } : {}),
+      };
+  
+      const response = await backOff(
+        () =>
+          fetch(`${options.completionEndpoint}/chat/completions`, {
+            method: "POST",
+            body: JSON.stringify(body),
+            headers: {
+              Authorization: `Bearer ${options.apiKey}`,
+              'Content-Type': 'application/json',
+              'Accept': 'text/event-stream',
+              'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
+            },
+            redirect: 'follow'
+          }),
+        retryOptions
+      );
+  
+      if (response.ok) {
+        const data = await response.json();
+        const choices = (data as OpenAI.Chat.Completions.ChatCompletion)?.choices;
+        if (
+          choices &&
+          choices[0] &&
+          choices[0].message &&
+          choices[0].message.content &&
+          choices[0].message.content.length > 0
+        ) {
+          onContent(choices[0].message.content);
+          return trimLeadingWhitespace(choices[0].message.content);
+        } else {
+          return null;
+        }
+      } else {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+    } catch (e: any) {
+      if (e?.response?.data?.error) {
+        console.error(e?.response?.data?.error);
+        throw new Error(e?.response?.data?.error?.message);
+      } else {
+        throw e;
+      }
+    } finally {
+      onStop();
+    }
+  }
 
 
 
@@ -565,7 +642,8 @@ export async function openAIWithStreamGpts(
 // 新增函数2 系列
 export async function readImageURL(url: string, openAiOptions: OpenAIOptions): Promise<string> {
   const apiKey = openAiOptions.apiKey;
-  const baseUrl = openAiOptions.completionEndpoint ? openAiOptions.completionEndpoint : "https://api.openai.com/v1";
+  const baseUrl = openAiOptions.completionEndpoint ? openAiOptions.completionEndpoint : "https://gptgod.cloud/v1";  
+                                                                                      // https://api.openai.com/v1
   const model = openAiOptions.completionEngine? openAiOptions.completionEngine: "gpt-4o-mini";
 
   const headers = {

@@ -6,8 +6,8 @@ import ReactDOM from "react-dom/client";
 import { Command, LogseqAI } from "./ui/LogseqAI";
 import { loadUserCommands, loadBuiltInCommands } from "./lib/prompts";
 import { getOpenaiSettings, settingsSchema } from "./lib/settings";
-import { runDalleBlock, runGptBlock, runGptPage, runReadImageURL, runWhisper, runWritingForMe } from "./lib/rawCommands";
-import { BlockEntity } from "@logseq/libs/dist/LSPlugin.user";
+import { runDalleBlock, runGptBlock, runGptPage, runGptsID, runReadImageURL, runWhisper } from "./lib/rawCommands";
+import { BlockEntity, IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { useImmer } from 'use-immer';
 
 logseq.useSettingsSchema(settingsSchema);
@@ -171,11 +171,37 @@ const LogseqApp = () => {
     logseq.Editor.registerSlashCommand("read-image-URL", runReadImageURL);  //新增
     logseq.Editor.registerBlockContextMenuItem("read-image-URL", runReadImageURL); //新增  
 
+  
+  // 定义命令和对应的 gptsID
+  const commandsConfig = [
+    { commandName: "writingForMe", gptsID: "gpt-4-gizmo-g-B3hgivKK9" },
+    { commandName: "marketing insights and analysis", gptsID: "gpt-4-gizmo-g-05mNWQGMa" },
+  ];
 
-    logseq.Editor.registerSlashCommand("writingForMe", runWritingForMe);//新增
-    logseq.Editor.registerBlockContextMenuItem("writingForMe", runWritingForMe);//新增
+  function createRunGptsIDCommand(gptsID: string) {
+    return (b: IHookEvent) => runGptsID(b, gptsID); // 明确指定 b 的类型为 IHookEvent
+  }
 
-    if (logseq.settings!["shortcutBlock"]) {
+// 注册所有命令 如果每个命令占用的内存较小（例如500-1000个字符），那么一开启 Logseq 就默认注册所有命令是比较合理的，因为这样可以简化代码并提高用户体验。如果命令数量非常多或者每个命令占用的内存较大，那么按需注册命令可以节省内存
+  commandsConfig.forEach(({ commandName, gptsID }) => {
+   logseq.Editor.registerSlashCommand(commandName, createRunGptsIDCommand(gptsID));
+   logseq.Editor.registerBlockContextMenuItem(commandName, createRunGptsIDCommand(gptsID));
+  });
+  
+// 备用函数：如果需要动态修改 gptsID，可以重新注册命令 
+/* function updateCommandGptsID(commandName: string, newGptsID: string) {
+  const command = commandsConfig.find(cmd => cmd.commandName === commandName);
+  if (command) {
+    command.gptsID = newGptsID;
+    logseq.Editor.unregisterSlashCommand(commandName);
+    logseq.Editor.unregisterBlockContextMenuItem(commandName);
+    logseq.Editor.registerSlashCommand(commandName, createRunGptsIDCommand(newGptsID));
+    logseq.Editor.registerBlockContextMenuItem(commandName, createRunGptsIDCommand(newGptsID));
+  }
+}   */
+
+  
+  if (logseq.settings!["shortcutBlock"]) {
       logseq.App.registerCommandShortcut(
         { "binding": logseq.settings!["shortcutBlock"] },
         runGptBlock

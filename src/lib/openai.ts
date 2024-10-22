@@ -17,6 +17,7 @@ export interface OpenAIOptions {
   dalleStyle?: DalleStyle;
   chatPrompt?: string;
   completionEndpoint?: string;
+  gpts?: string; //代码新增
 }
 
 const OpenAIDefaults = (apiKey: string): OpenAIOptions => ({
@@ -27,7 +28,8 @@ const OpenAIDefaults = (apiKey: string): OpenAIOptions => ({
   dalleImageSize: '1024',
   dalleModel: 'dall-e-3',
   dalleQuality: 'standard',
-  dalleStyle: 'vivid'
+  dalleStyle: 'vivid',
+  gpts: "gpt-4-gizmo-g-B3hgivKK9",//代码新增
 });
 
 const retryOptions = {
@@ -224,7 +226,7 @@ export async function openAIWithStream(
   const engine = options.completionEngine!;
 
   try {
-    if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4")) {
+    if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o-mini")) {
       // inputMessages：这是一个数组，包含一个或多个消息对象，每个消息对象表示一个对话中的消息
       // { role: "user", content: input }：这是一个消息对象，表示用户发送的消息；input 是传入函数的参数，表示用户输入的内容。
       const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
@@ -244,7 +246,8 @@ export async function openAIWithStream(
         frequency_penalty: 0,
         presence_penalty: 0,
         model: engine,
-        stream: true
+        stream: true,
+        ...(options.gpts ? { gpts: options.gpts } : {}),   //代码增加
       }
       const response = await backOff(
         () =>
@@ -338,7 +341,8 @@ export async function openAIWithStream(
         frequency_penalty: 0,
         presence_penalty: 0,
         model: engine,
-        stream: true
+        stream: true,
+        ...(options.gpts ? { gpts: options.gpts } : {}),   //代码增加
       }
       // 使用 backOff 处理重试逻辑
       const response = await backOff(
@@ -431,7 +435,134 @@ function trimLeadingWhitespace(s: string): string {
 
 
 
-// 新增函数
+
+//新增函数1
+export async function openAIWithStreamGpts(
+  input: string,
+  openAiOptions: OpenAIOptions,
+  onContent: (content: string) => void,
+  onStop: () => void
+): Promise<string | null> {
+  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+
+  try {
+    if (options.gpts === "gpt-4-gizmo-g-B3hgivKK9") {
+      const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
+      if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
+        inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
+      }
+
+      const body = {
+        messages: inputMessages,
+        temperature: options.temperature,
+        max_tokens: options.maxTokens,
+        top_p: 1,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        model: options.gpts,
+        stream: false,
+        ...(options.gpts ? { gpts: options.gpts } : {}),
+      };
+
+      const response = await backOff(
+        () =>
+          fetch(`${options.completionEndpoint}/chat/completions`, {
+            method: "POST",
+            body: JSON.stringify(body),
+            headers: {
+              Authorization: `Bearer ${options.apiKey}`,
+              'Content-Type': 'application/json',
+              'Accept': 'text/event-stream',
+              'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
+            },
+            redirect: 'follow'
+          }),
+        retryOptions
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const choices = (data as OpenAI.Chat.Completions.ChatCompletion)?.choices;
+        if (
+          choices &&
+          choices[0] &&
+          choices[0].message &&
+          choices[0].message.content &&
+          choices[0].message.content.length > 0
+        ) {
+          onContent(choices[0].message.content);
+          return trimLeadingWhitespace(choices[0].message.content);
+        } else {
+          return null;
+        }
+      } else {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+    } else {
+      const body = {
+        prompt: input,
+        temperature: options.temperature,
+        max_tokens: options.maxTokens,
+        top_p: 1,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        model: options.gpts,
+        stream: false,
+        ...(options.gpts ? { gpts: options.gpts } : {}),
+      };
+
+      const response = await backOff(
+        () =>
+          fetch(`${options.completionEndpoint}/completions`, {
+            method: "POST",
+            body: JSON.stringify(body),
+            headers: {
+              Authorization: `Bearer ${options.apiKey}`,
+              'Content-Type': 'application/json',
+              'Accept': 'text/event-stream',
+              'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
+            },
+            redirect: 'follow'
+          }),
+        retryOptions
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const choices = (data as OpenAI.Completion)?.choices;
+        if (
+          choices &&
+          choices[0] &&
+          choices[0].text &&
+          choices[0].text.length > 0
+        ) {
+          onContent(choices[0].text);
+          return trimLeadingWhitespace(choices[0].text);
+        } else {
+          return null;
+        }
+      } else {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+    }
+  } catch (e: any) {
+    if (e?.response?.data?.error) {
+      console.error(e?.response?.data?.error);
+      throw new Error(e?.response?.data?.error?.message);
+    } else {
+      throw e;
+    }
+  } finally {
+    onStop();
+  }
+}
+
+
+
+
+
+
+// 新增函数2 系列
 export async function readImageURL(url: string, openAiOptions: OpenAIOptions): Promise<string> {
   const apiKey = openAiOptions.apiKey;
   const baseUrl = openAiOptions.completionEndpoint ? openAiOptions.completionEndpoint : "https://api.openai.com/v1";

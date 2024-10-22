@@ -6,7 +6,7 @@ import ReactDOM from "react-dom/client";
 import { Command, LogseqAI } from "./ui/LogseqAI";
 import { loadUserCommands, loadBuiltInCommands } from "./lib/prompts";
 import { getOpenaiSettings, settingsSchema } from "./lib/settings";
-import { runDalleBlock, runGptBlock, runGptPage, runReadImageURL, runWhisper } from "./lib/rawCommands";
+import { runDalleBlock, runGptBlock, runGptPage, runReadImageURL, runWhisper, runWritingForMe } from "./lib/rawCommands";
 import { BlockEntity } from "@logseq/libs/dist/LSPlugin.user";
 import { useImmer } from 'use-immer';
 
@@ -170,6 +170,10 @@ const LogseqApp = () => {
 
     logseq.Editor.registerSlashCommand("read-image-URL", runReadImageURL);  //新增
     logseq.Editor.registerBlockContextMenuItem("read-image-URL", runReadImageURL); //新增  
+
+
+    logseq.Editor.registerSlashCommand("writingForMe", runWritingForMe);//新增
+    logseq.Editor.registerBlockContextMenuItem("writingForMe", runWritingForMe);//新增
 
     if (logseq.settings!["shortcutBlock"]) {
       logseq.App.registerCommandShortcut(

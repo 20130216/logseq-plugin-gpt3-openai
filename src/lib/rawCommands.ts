@@ -1,6 +1,6 @@
 import { IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { getAudioFile, getPageContentFromBlock, getImageUrlFromBlock,saveDalleImage } from "./logseq";
-import { OpenAIOptions, dallE, whisper, openAIWithStream, readImageURL, readLocalImageURL } from "./openai";
+import { OpenAIOptions, dallE, whisper, openAIWithStream, readImageURL, readLocalImageURL, openAIWithStreamGpts } from "./openai";
 import { getOpenaiSettings } from "./settings";
 
 function handleOpenAIError(e: any) {
@@ -173,6 +173,48 @@ export async function runGptPage(b: IHookEvent) {
       return;
     }
 
+  } catch (e: any) {
+    handleOpenAIError(e);
+  }
+}
+
+//新增
+export async function runWritingForMe(b: IHookEvent) {
+  const openAISettings = getOpenaiSettings();
+  validateSettings(openAISettings);
+
+  const currentBlock = await logseq.Editor.getBlock(b.uuid);
+  if (!currentBlock) {
+    console.error("No current block");
+    return;
+  }
+
+  if (currentBlock.content.trim().length === 0) {
+    logseq.App.showMsg("Empty Content", "warning");
+    console.warn("Blank page");
+    return;
+  }
+
+  try {
+    let result = "";
+    const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
+      sibling: false,
+    });
+
+    if(openAISettings.injectPrefix && result.length == 0) {
+      result = openAISettings.injectPrefix + result;
+    }
+    await openAIWithStreamGpts(currentBlock.content, openAISettings,  async (content: string) => {
+      result += content || "";
+      if(null != insertBlock) {
+         await logseq.Editor.updateBlock(insertBlock.uuid, result);
+      }
+    }, () => {});
+
+    if (!result) {
+      logseq.App.showMsg("No OpenAI content" , "warning");
+      return;
+    }
   } catch (e: any) {
     handleOpenAIError(e);
   }

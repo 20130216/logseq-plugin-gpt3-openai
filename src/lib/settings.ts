@@ -29,6 +29,15 @@ export const settingsSchema: SettingSchemaDesc[] = [
     description:
       "The endpoint to use for OpenAI API completion requests. You shouldn't need to change this.",
   },
+    //代码新增：gpts相关
+    {
+      key: "gpts",
+      type: "string",
+      default: "gpt-4-gizmo-g-B3hgivKK9",
+      title: "gpts对应ID",
+      // description: "See Engines in OpenAI docs.",
+      description: "请填入要调用的chatgpt中的gpts ID",//代码修改：为中文
+    },
   {
     key: "chatPrompt",
     type: "string",
@@ -124,6 +133,7 @@ export function getOpenaiSettings(): PluginOptions {
   const dalleModel = logseq.settings!["dalleModel"];
   const dalleStyle = logseq.settings!["dalleStyle"];
   const dalleQuality = logseq.settings!["dalleQuality"];
+  const gpts = logseq.settings!["gpts"]; //代码新增
   const chatPrompt = logseq.settings!["chatPrompt"];
   const completionEndpoint = logseq.settings!["chatCompletionEndpoint"];
   return {
@@ -136,6 +146,7 @@ export function getOpenaiSettings(): PluginOptions {
     dalleQuality,
     dalleStyle,
     injectPrefix,
+    gpts, //代码新增
     chatPrompt,
     completionEndpoint,
   };

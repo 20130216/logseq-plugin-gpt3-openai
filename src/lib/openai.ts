@@ -422,7 +422,7 @@ export async function openAI(
 } */
 
 
-// 升级2-1-1-1-1-push-1
+// 升级2-1-1-1-1-push7/9-1-push12/12
 export async function openAIWithStream(
   input: string,
   openAiOptions: OpenAIOptions,
@@ -617,7 +617,7 @@ function trimLeadingWhitespace(s: string): string {
         }
       } */
 
-// 升级2-2-1-1-1-push-1
+// 升级2-2-1-1-1-push7/9-1-push12/12
 export async function openAIWithStreamGpts(
   input: string,
   openAiOptions: OpenAIOptions,

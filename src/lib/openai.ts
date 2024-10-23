@@ -220,7 +220,7 @@ export async function openAI(
   }
 }
 // openAIWithStream 函数：负责与 OpenAI API 交互，处理流式响应，并逐步拼接结果。
-export async function openAIWithStream(
+/* export async function openAIWithStream(
   input: string,
   openAiOptions: OpenAIOptions,
   onContent: (content: string) => void,
@@ -419,6 +419,100 @@ export async function openAIWithStream(
       throw e;
     }
   }
+} */
+
+
+// 升级2-1-1-1-1
+export async function openAIWithStream(
+  input: string,
+  openAiOptions: OpenAIOptions,
+  onContent: (content: string) => void,
+  onStop: () => void
+): Promise<string | null> {
+  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+
+  try {
+    const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
+    if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
+      inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
+    }
+
+    const body = {
+      messages: inputMessages,
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      top_p: 1,
+      frequency_penalty: 0,
+      presence_penalty: 0,
+      model: options.completionEngine!,
+      stream: true,
+    };
+
+    const response = await backOff(
+      () =>
+        fetch(`${options.completionEndpoint}/chat/completions`, {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: {
+            Authorization: `Bearer ${options.apiKey}`,
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream'
+          }
+        }).then(async (response) => {
+          if (response.ok && response.body) {
+            const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+            let result = "";
+
+            const readStream = (): any =>
+              reader.read().then(({ value, done }) => {
+                if (done) {
+                  reader.cancel();
+                  onStop();
+                  return Promise.resolve({ choices: [{ message: { content: result } }] });
+                }
+
+                const data = getDataFromStreamValue(value);
+                if (!data || !data[0]) {
+                  return readStream();
+                }
+
+                let res = "";
+                for (let i = 0; i < data.length; i++) {
+                  res += data[i].choices[0]?.delta?.content || "";
+                }
+                result += res;
+                onContent(res);
+                return readStream();
+              });
+
+            return readStream();
+          } else if (response.status === 429) {
+            console.warn("Rate limit exceeded. Retrying...");
+            throw new Error("Rate limit exceeded.");
+          } else {
+            throw new Error(`API request failed with status ${response.status}`);
+          }
+        }),
+      retryOptions
+    );
+
+    if (response) {
+      const choices = (response as OpenAI.Chat.Completions.ChatCompletion)?.choices;
+      if (choices && choices[0] && choices[0].message && choices[0].message.content && choices[0].message.content.length > 0) {
+        return trimLeadingWhitespace(choices[0].message.content);
+      }
+    }
+
+    return null;
+  } catch (e: any) {
+    console.error("Error in openAIWithStream:", e);
+    if (e?.response?.data?.error) {
+      console.error(e?.response?.data?.error);
+      throw new Error(e?.response?.data?.error?.message);
+    } else {
+      throw e;
+    }
+  }
 }
 
 function getDataFromStreamValue(value: string) {
@@ -439,9 +533,92 @@ function trimLeadingWhitespace(s: string): string {
 
 
 
+// 该版拼接正确，但不断有浮窗产生
+      /* export async function openAIWithStreamGpts(
+        input: string,
+        openAiOptions: OpenAIOptions,
+        onContent: (content: string) => void,
+        onStop: () => void
+      ): Promise<string | null> {
+        const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+      
+        try {
+          const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
+          if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
+            inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
+          }
+      
+          const body = {
+            messages: inputMessages,
+            temperature: options.temperature,
+            max_tokens: options.maxTokens,
+            top_p: 1,
+            frequency_penalty: 0,
+            presence_penalty: 0,
+            model: options.gpts,
+            stream: true, // 启用流式传输
+          };
+      
+          const response = await backOff(
+            () =>
+              fetch(`${options.completionEndpoint}/chat/completions`, {
+                method: "POST",
+                body: JSON.stringify(body),
+                headers: {
+                  Authorization: `Bearer ${options.apiKey}`,
+                  'Content-Type': 'application/json',
+                  'Accept': 'text/event-stream',
+                  'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
+                },
+                redirect: 'follow'
+              }),
+            retryOptions
+          );
+      
+          if (response.ok && response.body) {
+            const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+            let result = "";
+      
+            const readStream = (): any =>
+              reader.read().then(({ value, done }) => {
+                if (done) {
+                  reader.cancel();
+                  onStop();
+                  return Promise.resolve({ choices: [{ message: { content: result } }] });
+                }
+      
+                const data = getDataFromStreamValue(value);
+                if (!data || !data[0]) {
+                  return readStream();
+                }
+      
+                let res = "";
+                for (let i = 0; i < data.length; i++) {
+                  res += data[i].choices[0]?.delta?.content || "";
+                }
+                result += res;
+                onContent(res);
+                return readStream();
+              });
+      
+            return readStream();
+          } else {
+            throw new Error(`API request failed with status ${response.status}`);
+          }
+        } catch (e: any) {
+          if (e?.response?.data?.error) {
+            console.error(e?.response?.data?.error);
+            throw new Error(e?.response?.data?.error?.message);
+          } else {
+            throw e;
+          }
+        } finally {
+          onStop();
+        }
+      } */
 
-//新增函数1
-/* export async function openAIWithStreamGpts(
+// 升级2-2-1-1-1
+export async function openAIWithStreamGpts(
   input: string,
   openAiOptions: OpenAIOptions,
   onContent: (content: string) => void,
@@ -450,106 +627,82 @@ function trimLeadingWhitespace(s: string): string {
   const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
 
   try {
-    if (options.gpts == "gpt-4-gizmo-g-B3hgivKK9") {
-      const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
-      if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
-        inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
-      }
+    const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
+    if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
+      inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
+    }
 
-      const body = {
-        messages: inputMessages,
-        temperature: options.temperature,
-        max_tokens: options.maxTokens,
-        top_p: 1,
-        frequency_penalty: 0,
-        presence_penalty: 0,
-        model: options.gpts,
-        stream: false,
-        ...(options.gpts ? { gpts: options.gpts } : {}),
-      };
+    const body = {
+      messages: inputMessages,
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      top_p: 1,
+      frequency_penalty: 0,
+      presence_penalty: 0,
+      model: options.gpts,
+      stream: true,
+    };
 
-      const response = await backOff(
-        () =>
-          fetch(`${options.completionEndpoint}/chat/completions`, {
-            method: "POST",
-            body: JSON.stringify(body),
-            headers: {
-              Authorization: `Bearer ${options.apiKey}`,
-              'Content-Type': 'application/json',
-              'Accept': 'text/event-stream',
-              'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
-            },
-            redirect: 'follow'
-          }),
-        retryOptions
-      );
+    const response = await backOff(
+      () =>
+        fetch(`${options.completionEndpoint}/chat/completions`, {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: {
+            Authorization: `Bearer ${options.apiKey}`,
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+            'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
+          },
+          redirect: 'follow'
+        }).then(async (response) => {
+          if (response.ok && response.body) {
+            const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+            let result = "";
 
-      if (response.ok) {
-        const data = await response.json();
-        const choices = (data as OpenAI.Chat.Completions.ChatCompletion)?.choices;
-        if (
-          choices &&
-          choices[0] &&
-          choices[0].message &&
-          choices[0].message.content &&
-          choices[0].message.content.length > 0
-        ) {
-          onContent(choices[0].message.content);
-          return trimLeadingWhitespace(choices[0].message.content);
-        } else {
-          return null;
-        }
-      } else {
-        throw new Error(`API request failed with status ${response.status}`);
-      }
-    } else {
-      const body = {
-        prompt: input,
-        temperature: options.temperature,
-        max_tokens: options.maxTokens,
-        top_p: 1,
-        frequency_penalty: 0,
-        presence_penalty: 0,
-        model: options.gpts,
-        stream: false,
-        ...(options.gpts ? { gpts: options.gpts } : {}),
-      };
+            const readStream = (): any =>
+              reader.read().then(({ value, done }) => {
+                if (done) {
+                  reader.cancel();
+                  onStop();
+                  return Promise.resolve({ choices: [{ message: { content: result } }] });
+                }
 
-      const response = await backOff(
-        () =>
-          fetch(`${options.completionEndpoint}/completions`, {
-            method: "POST",
-            body: JSON.stringify(body),
-            headers: {
-              Authorization: `Bearer ${options.apiKey}`,
-              'Content-Type': 'application/json',
-              'Accept': 'text/event-stream',
-              'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
-            },
-            redirect: 'follow'
-          }),
-        retryOptions
-      );
+                const data = getDataFromStreamValue(value);
+                if (!data || !data[0]) {
+                  return readStream();
+                }
 
-      if (response.ok) {
-        const data = await response.json();
-        const choices = (data as OpenAI.Completion)?.choices;
-        if (
-          choices &&
-          choices[0] &&
-          choices[0].text &&
-          choices[0].text.length > 0
-        ) {
-          onContent(choices[0].text);
-          return trimLeadingWhitespace(choices[0].text);
-        } else {
-          return null;
-        }
-      } else {
-        throw new Error(`API request failed with status ${response.status}`);
+                let res = "";
+                for (let i = 0; i < data.length; i++) {
+                  res += data[i].choices[0]?.delta?.content || "";
+                }
+                result += res;
+                onContent(res);
+                return readStream();
+              });
+
+            return readStream();
+          } else if (response.status === 429) {
+            console.warn("Rate limit exceeded. Retrying...");
+            throw new Error("Rate limit exceeded.");
+          } else {
+            throw new Error(`API request failed with status ${response.status}`);
+          }
+        }),
+      retryOptions
+    );
+
+    if (response) {
+      const choices = (response as OpenAI.Chat.Completions.ChatCompletion)?.choices;
+      if (choices && choices[0] && choices[0].message && choices[0].message.content && choices[0].message.content.length > 0) {
+        return trimLeadingWhitespace(choices[0].message.content);
       }
     }
+
+    return null;
   } catch (e: any) {
+    console.error("Error in openAIWithStreamGpts:", e);
     if (e?.response?.data?.error) {
       console.error(e?.response?.data?.error);
       throw new Error(e?.response?.data?.error?.message);
@@ -559,85 +712,7 @@ function trimLeadingWhitespace(s: string): string {
   } finally {
     onStop();
   }
-} */
-
-  export async function openAIWithStreamGpts(
-    input: string,
-    openAiOptions: OpenAIOptions,
-    onContent: (content: string) => void,
-    onStop: () => void
-  ): Promise<string | null> {
-    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
-  
-    try {
-      // 移除硬编码的模型ID，使用传入的gpts作为模型ID
-      const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
-      if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
-        inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
-      }
-  
-      const body = {
-        messages: inputMessages,
-        temperature: options.temperature,
-        max_tokens: options.maxTokens,
-        top_p: 1,
-        frequency_penalty: 0,
-        presence_penalty: 0,
-        model: options.gpts,
-        stream: false,
-        ...(options.gpts ? { gpts: options.gpts } : {}),
-      };
-  
-      const response = await backOff(
-        () =>
-          fetch(`${options.completionEndpoint}/chat/completions`, {
-            method: "POST",
-            body: JSON.stringify(body),
-            headers: {
-              Authorization: `Bearer ${options.apiKey}`,
-              'Content-Type': 'application/json',
-              'Accept': 'text/event-stream',
-              'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
-            },
-            redirect: 'follow'
-          }),
-        retryOptions
-      );
-  
-      if (response.ok) {
-        const data = await response.json();
-        const choices = (data as OpenAI.Chat.Completions.ChatCompletion)?.choices;
-        if (
-          choices &&
-          choices[0] &&
-          choices[0].message &&
-          choices[0].message.content &&
-          choices[0].message.content.length > 0
-        ) {
-          onContent(choices[0].message.content);
-          return trimLeadingWhitespace(choices[0].message.content);
-        } else {
-          return null;
-        }
-      } else {
-        throw new Error(`API request failed with status ${response.status}`);
-      }
-    } catch (e: any) {
-      if (e?.response?.data?.error) {
-        console.error(e?.response?.data?.error);
-        throw new Error(e?.response?.data?.error?.message);
-      } else {
-        throw e;
-      }
-    } finally {
-      onStop();
-    }
-  }
-
-
-
-
-
+}
 
 // 新增函数2 系列
 export async function readImageURL(url: string, openAiOptions: OpenAIOptions): Promise<string> {

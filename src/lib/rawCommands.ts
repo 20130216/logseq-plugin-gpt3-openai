@@ -68,7 +68,7 @@ function validateSettings(settings: OpenAIOptions) {
 }
 
 // 负责在用户触发快捷键时，获取当前块的内容，调用 openAIWithStream 生成内容，并将结果插入到新块中。
-export async function runGptBlock(b: IHookEvent) {
+/* export async function runGptBlock(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);
 
@@ -129,8 +129,57 @@ export async function runGptBlock(b: IHookEvent) {
   } catch (e: any) {
     handleOpenAIError(e);
   }
+} */
+
+
+// 升级1-1-1-1-1
+export async function runGptBlock(b: IHookEvent) {
+  const openAISettings = getOpenaiSettings();
+  validateSettings(openAISettings);
+
+  const currentBlock = await logseq.Editor.getBlock(b.uuid);
+  if (!currentBlock) {
+    console.error("No current block");
+    return;
+  }
+
+  if (currentBlock.content.trim().length === 0) {
+    logseq.App.showMsg("Empty Content", "warning");
+    console.warn("Blank page");
+    return;
+  }
+
+  try {
+    let result = "";
+    const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
+      sibling: false,
+    });
+
+    if (openAISettings.injectPrefix && result.length === 0) {
+      result = openAISettings.injectPrefix + result;
+    }
+
+    await openAIWithStream(currentBlock.content, openAISettings, async (content: string) => {
+      result += content || "";
+      if (insertBlock) {
+        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+      }
+    }, () => {});
+
+    if (!result) {
+      logseq.App.showMsg("No OpenAI content", "warning");
+      return;
+    }
+  } catch (e: any) {
+    console.error("Error in runGptBlock:", e);
+    handleOpenAIError(e);
+  }
 }
 
+
+
+  
+  
 export async function runGptPage(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);
@@ -178,50 +227,53 @@ export async function runGptPage(b: IHookEvent) {
   }
 }
 
-//新增
-/* export async function runWritingForMe(b: IHookEvent) {
-  const openAISettings = getOpenaiSettings();
-  validateSettings(openAISettings);
 
-  const currentBlock = await logseq.Editor.getBlock(b.uuid);
-  if (!currentBlock) {
-    console.error("No current block");
-    return;
-  }
 
-  if (currentBlock.content.trim().length === 0) {
-    logseq.App.showMsg("Empty Content", "warning");
-    console.warn("Blank page");
-    return;
-  }
-
-  try {
-    let result = "";
-    const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
-      sibling: false,
-    });
-
-    if(openAISettings.injectPrefix && result.length == 0) {
-      result = openAISettings.injectPrefix + result;
-    }
-    await openAIWithStreamGpts(currentBlock.content, openAISettings,  async (content: string) => {
-      result += content || "";
-      if(null != insertBlock) {
-         await logseq.Editor.updateBlock(insertBlock.uuid, result);
-      }
-    }, () => {});
-
-    if (!result) {
-      logseq.App.showMsg("No OpenAI content" , "warning");
+// 该版拼接正确，但不断有浮窗产生  
+  /* export async function runGptsID(b: IHookEvent, gptsID: string) {
+    const openAISettings = getOpenaiSettings();
+    validateSettings(openAISettings);
+  
+    const currentBlock = await logseq.Editor.getBlock(b.uuid);
+    if (!currentBlock) {
+      console.error("No current block");
       return;
     }
-  } catch (e: any) {
-    handleOpenAIError(e);
-  }
-} */
+  
+    if (currentBlock.content.trim().length === 0) {
+      logseq.App.showMsg("Empty Content", "warning");
+      console.warn("Blank page");
+      return;
+    }
+  
+    try {
+      let result = "";
+      const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
+        sibling: false,
+      });
+  
+      if (openAISettings.injectPrefix && result.length === 0) {
+        result = openAISettings.injectPrefix + result;
+      }
+  
+      // 将 gptsID 作为参数传递给 openAIWithStreamGpts
+      await openAIWithStreamGpts(currentBlock.content, { ...openAISettings, gpts: gptsID }, async (content: string) => {
+        result += content || "";
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+      }, () => {});
+  
+      if (!result) {
+        logseq.App.showMsg("No OpenAI content", "warning");
+        return;
+      }
+    } catch (e: any) {
+      handleOpenAIError(e);
+    }
+  } */
 
-
-// rawCommands.ts 修改函数：
+// 升级1-2-1-1-1
 export async function runGptsID(b: IHookEvent, gptsID: string) {
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);
@@ -244,28 +296,26 @@ export async function runGptsID(b: IHookEvent, gptsID: string) {
       sibling: false,
     });
 
-    if(openAISettings.injectPrefix && result.length == 0) {
+    if (openAISettings.injectPrefix && result.length === 0) {
       result = openAISettings.injectPrefix + result;
     }
-    // 将gptsID作为参数传递给openAIWithStreamGpts
-    await openAIWithStreamGpts(currentBlock.content, {...openAISettings, gpts: gptsID},  async (content: string) => {
+
+    await openAIWithStreamGpts(currentBlock.content, { ...openAISettings, gpts: gptsID }, async (content: string) => {
       result += content || "";
-      if(null != insertBlock) {
-         await logseq.Editor.updateBlock(insertBlock.uuid, result);
+      if (insertBlock) {
+        await logseq.Editor.updateBlock(insertBlock.uuid, result);
       }
     }, () => {});
 
     if (!result) {
-      logseq.App.showMsg("No OpenAI content" , "warning");
+      logseq.App.showMsg("No OpenAI content", "warning");
       return;
     }
   } catch (e: any) {
+    console.error("Error in runGptsID:", e);
     handleOpenAIError(e);
   }
 }
-
-
-
 
 
 export async function runDalleBlock(b: IHookEvent) {

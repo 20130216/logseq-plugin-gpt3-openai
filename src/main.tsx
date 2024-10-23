@@ -171,19 +171,16 @@ const LogseqApp = () => {
     logseq.Editor.registerSlashCommand("read-image-URL", runReadImageURL);  //新增
     logseq.Editor.registerBlockContextMenuItem("read-image-URL", runReadImageURL); //新增  
 
-  
   // 定义命令和对应的 gptsID
   const commandsConfig = [
     { commandName: "writingForMe", gptsID: "gpt-4-gizmo-g-B3hgivKK9" },
-    { commandName: "marketing insights and analysis", gptsID: "gpt-4-gizmo-g-05mNWQGMa" },
+    { commandName: "marketing insights and analysis", gptsID: "gpt-4-gizmo-g-O5mNWQGMa" }, 
   ];
-
-  function createRunGptsIDCommand(gptsID: string) {
+ function createRunGptsIDCommand(gptsID: string) {
     return (b: IHookEvent) => runGptsID(b, gptsID); // 明确指定 b 的类型为 IHookEvent
-  }
-
-// 注册所有命令 如果每个命令占用的内存较小（例如500-1000个字符），那么一开启 Logseq 就默认注册所有命令是比较合理的，因为这样可以简化代码并提高用户体验。如果命令数量非常多或者每个命令占用的内存较大，那么按需注册命令可以节省内存
-  commandsConfig.forEach(({ commandName, gptsID }) => {
+  } 
+    
+   commandsConfig.forEach(({ commandName, gptsID }) => {
    logseq.Editor.registerSlashCommand(commandName, createRunGptsIDCommand(gptsID));
    logseq.Editor.registerBlockContextMenuItem(commandName, createRunGptsIDCommand(gptsID));
   });

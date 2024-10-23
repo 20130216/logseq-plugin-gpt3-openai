@@ -132,7 +132,7 @@ function validateSettings(settings: OpenAIOptions) {
 } */
 
 
-// 升级1-1-1-1-1
+// 升级1-1-1-1-1-push-1
 export async function runGptBlock(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);
@@ -273,7 +273,7 @@ export async function runGptPage(b: IHookEvent) {
     }
   } */
 
-// 升级1-2-1-1-1
+// 升级1-2-1-1-1-push-1
 export async function runGptsID(b: IHookEvent, gptsID: string) {
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);

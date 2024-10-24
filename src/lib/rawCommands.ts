@@ -67,7 +67,7 @@ function validateSettings(settings: OpenAIOptions) {
   }
 }
 
-// 10.24:push24/25 详细注释版
+// 10.24:push24/25 测试25次，24次无bug，详细注释版
 // 负责在用户触发快捷键时，获取当前块的内容，调用 openAIWithStream 生成内容，并将结果插入到新块中。
 export async function runGptBlock(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
@@ -134,7 +134,7 @@ export async function runGptBlock(b: IHookEvent) {
 }
 
 
-// 升级1-1-1-1-1-push7/9-1-push12/12-1-10.24:push24/25 去除注释版（和上述注释版代码相同，仅仅是无注释的简洁版）
+// 升级1-1-1-1-1-push7/9-1-push12/12-1-10.24:push24/25 测试25次，24次无bug，去除注释版（和上述注释版代码相同，仅仅是无注释的简洁版）
 /* export async function runGptBlock(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);

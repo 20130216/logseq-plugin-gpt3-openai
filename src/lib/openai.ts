@@ -219,9 +219,9 @@ export async function openAI(
     }
   }
 }
-// 10.24:push24/25 详细注释版
+// 10.24:push24/25 测试25次，24次无bug，详细注释版 
 // openAIWithStream 函数 解释版：负责与 OpenAI API 交互，处理流式响应，并逐步拼接结果。
-export async function openAIWithStream(
+/* export async function openAIWithStream(
   input: string,
   openAiOptions: OpenAIOptions,
   onContent: (content: string) => void,
@@ -231,11 +231,12 @@ export async function openAIWithStream(
   const engine = options.completionEngine!;
 
   try {
-    if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o")) {
-      console.log("engine is: ", engine); // 添加日志输出
-      console.log("\nchatCompletionEndpoint is: ", options.completionEndpoint); // 添加日志输出
-
       // 如果模型是 gpt-3.5、gpt-4 或 gpt-4o，则使用聊天完成接口 (/chat/completions)
+    if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o")) {
+      // 这些调试信息可能会暴露敏感信息（如 API 地址），因此需要谨慎使用，并在部署前移除或禁用
+      // console.log("engine is: ", engine); // 添加日志输出
+      // console.log("\nchatCompletionEndpoint is: ", options.completionEndpoint); // 添加日志输出
+
       // inputMessages：这是一个数组，包含一个或多个消息对象，每个消息对象表示一个对话中的消息
       // { role: "user", content: input }：这是一个消息对象，表示用户发送的消息；input 是传入函数的参数，表示用户输入的内容。
       const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
@@ -257,7 +258,7 @@ export async function openAIWithStream(
         model: engine,
         stream: true,
         // 如果单独增加该代码 只是为了当前健壮性和未来扩展性以及请求体的灵活性；
-        // 本次如果只是 gpt-3.5、gpt-4 或 gpt-4o，用不上这个设置
+        // 本函数因为只处理 gpt-3.5、gpt-4 或 gpt-4o，因此用不上这个设置
         // 为了强调这个函数不用来处理 gpts 的调用（下面有单独处理 gpts 赋值的函数 openAIWithStreamGpts），此处特意不对其进行赋值 以防引起误解
         // ...(options.gpts ? { gpts: options.gpts } : {}),
       };
@@ -350,7 +351,7 @@ export async function openAIWithStream(
         presence_penalty: 0,
         model: engine,
         stream: true,
-        // ...(options.gpts ? { gpts: options.gpts } : {}),
+      // ...(options.gpts ? { gpts: options.gpts } : {}),
       };
       // 使用 backOff 处理重试逻辑
       const response = await backOff(
@@ -420,11 +421,11 @@ export async function openAIWithStream(
       throw e;
     }
   }
-}
+} */
 
 
-// 升级2-1-1-1-1-push7/9-1-push12/12-1-10.24:push24/25 去除注释版（和上述注释版代码相同，仅仅是无注释的简洁版）
-/* export async function openAIWithStream(
+// 升级2-1-1-1-1-push7/9-1-push12/12-1-10.24:push24/25 测试25次，24次无bug，去除注释版（和上述注释版代码相同，仅仅是无注释的简洁版）
+export async function openAIWithStream(
   input: string,
   openAiOptions: OpenAIOptions,
   onContent: (content: string) => void,
@@ -435,8 +436,8 @@ export async function openAIWithStream(
 
   try {
     if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o")) {
-      console.log("engine is: ", engine);
-      console.log("\nchatCompletionEndpoint is: ", options.completionEndpoint);
+      // console.log("engine is: ", engine);
+      // console.log("\nchatCompletionEndpoint is: ", options.completionEndpoint);
       const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
       if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
         inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
@@ -578,7 +579,7 @@ export async function openAIWithStream(
       throw e;
     }
   }
-} */
+}
 
 function getDataFromStreamValue(value: string) {
   const matches = [...value.split("data:")];

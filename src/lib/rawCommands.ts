@@ -67,8 +67,9 @@ function validateSettings(settings: OpenAIOptions) {
   }
 }
 
+// 10.24:push24/25 详细注释版
 // 负责在用户触发快捷键时，获取当前块的内容，调用 openAIWithStream 生成内容，并将结果插入到新块中。
-/* export async function runGptBlock(b: IHookEvent) {
+export async function runGptBlock(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);
 
@@ -91,16 +92,17 @@ function validateSettings(settings: OpenAIOptions) {
       sibling: false,
     });
 
-    if(openAISettings.injectPrefix && result.length == 0) {
-      // 确保在后续内容生成之前，前缀已经被添加到 result 中，比如injectPrefix被设置为：“#Gpt4o”
+    if (openAISettings.injectPrefix && result.length == 0) {
+      // 确保在后续内容生成之前，前缀已经被添加到 result 中，比如 injectPrefix 被设置为：“#Gpt4o”
       result = openAISettings.injectPrefix + result;
     }
-                        // 定义一个异步回调函数async (content: string) => {...}：，接收 content 参数，表示从 OpenAI API 获取的内容。
-                        //内容回调函数，每当从 OpenAI API 获取到一部分内容时，会调用这个函数。
-                        //这个函数负责将获取到的内容拼接到 result 中，并更新插入的新块的内容。
-               //=>：箭头函数的语法，用于定义匿名函数；例如：async (content: string) => {...} 表示一个异步箭头函数，接收 content 参数
-               //更新块的内容：将从 OpenAI API 获取的内容逐步拼接到 result 中，并更新插入的新块的内容。
-               //确保 result 的值：即使 content 为空，也不会影响 result 的拼接。
+
+    // 定义一个异步回调函数 async (content: string) => {...}：，接收 content 参数，表示从 OpenAI API 获取的内容。
+    // 内容回调函数，每当从 OpenAI API 获取到一部分内容时，会调用这个函数。
+    // 这个函数负责将获取到的内容拼接到 result 中，并更新插入的新块的内容。
+    // =>：箭头函数的语法，用于定义匿名函数；例如：async (content: string) => {...} 表示一个异步箭头函数，接收 content 参数
+    // 更新块的内容：将从 OpenAI API 获取的内容逐步拼接到 result 中，并更新插入的新块的内容。
+    // 确保 result 的值：即使 content 为 null 或 undefined，也不会影响 result 的拼接。
     // await openAIWithStream(currentBlock.content, openAISettings, async (content: string) => {...}, () => {});：
     // 调用 openAIWithStream 函数，传入当前块的内容、设置、内容回调和停止回调。
 
@@ -112,28 +114,28 @@ function validateSettings(settings: OpenAIOptions) {
     //## async (content: string) => {...}：内容回调函数，用于处理从 OpenAI API 获取到的内容。
     // 内容回调：将从 OpenAI API 获取的内容逐步拼接到 result 中，并更新插入的新块。
     // () => {}：停止回调函数，当流读取完成后会调用这个函数。
-    await openAIWithStream(currentBlock.content, openAISettings,  async (content: string) => {
+    await openAIWithStream(currentBlock.content, openAISettings, async (content: string) => {
       // 将 content 拼接到 result 中；如果 content 为 null 或 undefined，则使用空字符串 ""
       // 这是在内容回调函数中使用的 result，用于拼接从 OpenAI API 响应中获取的内容块。
       result += content || "";
-      if(null != insertBlock) {
+      if (null != insertBlock) {
         // 更新插入的新块的内容：result：拼接后的最终内容；await 关键字表示等待 logseq.Editor.updateBlock 完成后再继续执行后续代码。
-         await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        await logseq.Editor.updateBlock(insertBlock.uuid, result);
       }
     }, () => {});
 
     if (!result) {
-      logseq.App.showMsg("No OpenAI content" , "warning");
+      logseq.App.showMsg("No OpenAI content", "warning");
       return;
     }
   } catch (e: any) {
     handleOpenAIError(e);
   }
-} */
+}
 
 
-// 升级1-1-1-1-1-push7/9-1-push12/12
-export async function runGptBlock(b: IHookEvent) {
+// 升级1-1-1-1-1-push7/9-1-push12/12-1-10.24:push24/25 去除注释版（和上述注释版代码相同，仅仅是无注释的简洁版）
+/* export async function runGptBlock(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);
 
@@ -171,11 +173,9 @@ export async function runGptBlock(b: IHookEvent) {
       return;
     }
   } catch (e: any) {
-    console.error("Error in runGptBlock:", e);
     handleOpenAIError(e);
   }
-}
-
+} */
 
 
   

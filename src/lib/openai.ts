@@ -219,8 +219,9 @@ export async function openAI(
     }
   }
 }
-// openAIWithStream 函数：负责与 OpenAI API 交互，处理流式响应，并逐步拼接结果。
-/* export async function openAIWithStream(
+// 10.24:push24/25 详细注释版
+// openAIWithStream 函数 解释版：负责与 OpenAI API 交互，处理流式响应，并逐步拼接结果。
+export async function openAIWithStream(
   input: string,
   openAiOptions: OpenAIOptions,
   onContent: (content: string) => void,
@@ -230,7 +231,11 @@ export async function openAI(
   const engine = options.completionEngine!;
 
   try {
-    if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o-mini")) {
+    if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o")) {
+      console.log("engine is: ", engine); // 添加日志输出
+      console.log("\nchatCompletionEndpoint is: ", options.completionEndpoint); // 添加日志输出
+
+      // 如果模型是 gpt-3.5、gpt-4 或 gpt-4o，则使用聊天完成接口 (/chat/completions)
       // inputMessages：这是一个数组，包含一个或多个消息对象，每个消息对象表示一个对话中的消息
       // { role: "user", content: input }：这是一个消息对象，表示用户发送的消息；input 是传入函数的参数，表示用户输入的内容。
       const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
@@ -251,8 +256,11 @@ export async function openAI(
         presence_penalty: 0,
         model: engine,
         stream: true,
-        ...(options.gpts ? { gpts: options.gpts } : {}),   //代码增加
-      }
+        // 如果单独增加该代码 只是为了当前健壮性和未来扩展性以及请求体的灵活性；
+        // 本次如果只是 gpt-3.5、gpt-4 或 gpt-4o，用不上这个设置
+        // 为了强调这个函数不用来处理 gpts 的调用（下面有单独处理 gpts 赋值的函数 openAIWithStreamGpts），此处特意不对其进行赋值 以防引起误解
+        // ...(options.gpts ? { gpts: options.gpts } : {}),
+      };
       const response = await backOff(
         () =>
           fetch(`${options.completionEndpoint}/chat/completions`, {
@@ -267,24 +275,19 @@ export async function openAI(
             }
           }).then((response) => {
             if (response.ok && response.body) {
-            // response.body：这是一个 ReadableStream 对象，表示从服务器返回的响应体。
-            // pipeThrough(new TextDecoderStream())：将 ReadableStream 转换为文本流。TextDecoderStream 用于解码二进制数据为文本。
-            //## getReader()：获取一个读取器，用于逐块读取流中的数据
-            //## 这一行代码是关键，它创建了一个读取器，可以逐步读取从 OpenAI API 返回的响应内容。这使得每次读取到一个内容块时，都会触发内容回调函数 async (content: string) => {...}，从而实现分段更新。
-            
-            //## 正是由于这种读取器和循环机制，使得内容可以分段读取和处理，从而实现了分段更新
+              // response.body：这是一个 ReadableStream 对象，表示从服务器返回的响应体。
+              // pipeThrough(new TextDecoderStream())：将 ReadableStream 转换为文本流。TextDecoderStream 用于解码二进制数据为文本。
+              //## getReader()：获取一个读取器，用于逐块读取流中的数据
+              //## 这一行代码是关键，它创建了一个读取器，可以逐步读取从 OpenAI API 返回的响应内容。这使得每次读取到一个内容块时，都会触发内容回调函数 async (content: string) => {...}，从而实现分段更新。
+              
+              //## 正是由于这种读取器和循环机制，使得内容可以分段读取和处理，从而实现了分段更新
               const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-              let result = ""
-              // 定义一个递归函数const readStream = (): any => {...}，用于逐块读取流中的数据。
+              let result = "";
+              // 定义一个递归函数 const readStream = (): any => {...}，用于逐块读取流中的数据。
               const readStream = (): any =>
                 // 读取流中的下一个数据块
-                reader.read().then(({
-                                      //## value：当前读取的数据块。
-                                      value,
-                                      // done：布尔值，表示是否已读取完所有数据。
-                                      done
-                                    }) => {
-                  // 如果 done 为 true，表示已读取完所有数据                    
+                reader.read().then(({ value, done }) => {
+                  // 如果 done 为 true，表示已读取完所有数据
                   if (done) {
                     reader.cancel();
                     onStop();
@@ -298,14 +301,14 @@ export async function openAI(
                     return readStream();
                   }
 
-                  let res = ""
+                  let res = "";
                   for (let i = 0; i < data.length; i++) {
                     // 将每个数据项的内容拼接到 res 中。
-                    res += data[i].choices[0]?.delta?.content || ""
+                    res += data[i].choices[0]?.delta?.content || "";
                   }
-                  result += res
+                  result += res;
                   //## 每次循环：调用 onContent 内容回调函数，将内容块拼接到 result 中，传递当前数据块的内容
-                  onContent(res)
+                  onContent(res);
                   // 递归调用 readStream，继续读取下一数据块
                   return readStream();
                 });
@@ -322,7 +325,7 @@ export async function openAI(
       );
       // response as OpenAI.Chat.Completions.ChatCompletion：将 response 断言为 OpenAI.Chat.Completions.ChatCompletion 类型
       // ?.choices：安全访问 choices 属性，如果 response 为 null 或 undefined，则返回 undefined。
-      // 检查响应  - 如果响应存在且格式正确 - 提取内容并返回 
+      // 检查响应  - 如果响应存在且格式正确 - 提取内容并返回
       const choices = (response as OpenAI.Chat.Completions.ChatCompletion)?.choices;
       if (
         choices &&
@@ -337,6 +340,7 @@ export async function openAI(
         return null;
       }
     } else {
+      // 条件: 如果模型不是 gpt-3.5、gpt-4 或 gpt-4o，则使用普通完成接口 (/completions)。
       const body = {
         prompt: input,
         temperature: options.temperature,
@@ -346,8 +350,8 @@ export async function openAI(
         presence_penalty: 0,
         model: engine,
         stream: true,
-        ...(options.gpts ? { gpts: options.gpts } : {}),   //代码增加
-      }
+        // ...(options.gpts ? { gpts: options.gpts } : {}),
+      };
       // 使用 backOff 处理重试逻辑
       const response = await backOff(
         () =>
@@ -365,17 +369,14 @@ export async function openAI(
             if (response.ok && response.body) {
               // 读取流：使用 TextDecoderStream 解码响应体，逐块读取数据。
               const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-              let result = ""
+              let result = "";
               const readStream = (): any =>
-                reader.read().then(({
-                                      value,
-                                      done
-                                    }) => {
+                reader.read().then(({ value, done }) => {
                   if (done) {
                     reader.cancel();
                     // 完成流：流读取完成后，调用 onStop 回调函数。
                     onStop();
-                    return Promise.resolve({ choices: [{ text: result }]});
+                    return Promise.resolve({ choices: [{ text: result }] });
                   }
 
                   const data = getDataFromStreamValue(value);
@@ -383,13 +384,171 @@ export async function openAI(
                     return readStream();
                   }
 
-                  let res = ""
+                  let res = "";
                   for (let i = 0; i < data.length; i++) {
-                    res += data[i].choices[0]?.text || ""
+                    res += data[i].choices[0]?.text || "";
                   }
-                  result += res
+                  result += res;
                   // 处理数据：将每块数据拼接成最终结果，并调用 onContent 回调函数
-                  onContent(res)
+                  onContent(res);
+                  return readStream();
+                });
+              return readStream();
+            } else {
+              return Promise.reject(response);
+            }
+          }),
+        retryOptions
+      );
+      const choices = (response as OpenAI.Completion)?.choices;
+      if (
+        choices &&
+        choices[0] &&
+        choices[0].text &&
+        choices[0].text.length > 0
+      ) {
+        return trimLeadingWhitespace(choices[0].text);
+      } else {
+        return null;
+      }
+    }
+  } catch (e: any) {
+    if (e?.response?.data?.error) {
+      console.error(e?.response?.data?.error);
+      throw new Error(e?.response?.data?.error?.message);
+    } else {
+      throw e;
+    }
+  }
+}
+
+
+// 升级2-1-1-1-1-push7/9-1-push12/12-1-10.24:push24/25 去除注释版（和上述注释版代码相同，仅仅是无注释的简洁版）
+/* export async function openAIWithStream(
+  input: string,
+  openAiOptions: OpenAIOptions,
+  onContent: (content: string) => void,
+  onStop: () => void
+): Promise<string | null> {
+  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+  const engine = options.completionEngine!;
+
+  try {
+    if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o")) {
+      console.log("engine is: ", engine);
+      console.log("\nchatCompletionEndpoint is: ", options.completionEndpoint);
+      const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
+      if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
+        inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
+      }
+      const body = {
+        messages: inputMessages,
+        temperature: options.temperature,
+        max_tokens: options.maxTokens,
+        top_p: 1,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        model: engine,
+        stream: true
+      };
+      const response = await backOff(
+        () =>
+          fetch(`${options.completionEndpoint}/chat/completions`, {
+            method: "POST",
+            body: JSON.stringify(body),
+            headers: {
+              Authorization: `Bearer ${options.apiKey}`,
+              'Content-Type': 'application/json',
+              'Accept': 'text/event-stream'
+            }
+          }).then((response) => {
+            if (response.ok && response.body) {
+              const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+              let result = "";
+              const readStream = (): any =>
+                reader.read().then(({ value, done }) => {
+                  if (done) {
+                    reader.cancel();
+                    onStop();
+                    return Promise.resolve({ choices: [{ message: { content: result } }] });
+                  }
+
+                  const data = getDataFromStreamValue(value);
+                  if (!data || !data[0]) {
+                    return readStream();
+                  }
+
+                  let res = "";
+                  for (let i = 0; i < data.length; i++) {
+                    res += data[i].choices[0]?.delta?.content || "";
+                  }
+                  result += res;
+                  onContent(res);
+                  return readStream();
+                });
+              return readStream();
+            } else {
+              return Promise.reject(response);
+            }
+          }),
+        retryOptions
+      );
+      const choices = (response as OpenAI.Chat.Completions.ChatCompletion)?.choices;
+      if (
+        choices &&
+        choices[0] &&
+        choices[0].message &&
+        choices[0].message.content &&
+        choices[0].message.content.length > 0
+      ) {
+        return trimLeadingWhitespace(choices[0].message.content);
+      } else {
+        return null;
+      }
+    } else {
+      const body = {
+        prompt: input,
+        temperature: options.temperature,
+        max_tokens: options.maxTokens,
+        top_p: 1,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        model: engine,
+        stream: true
+      };
+      const response = await backOff(
+        () =>
+          fetch(`${options.completionEndpoint}/completions`, {
+            method: "POST",
+            body: JSON.stringify(body),
+            headers: {
+              Authorization: `Bearer ${options.apiKey}`,
+              'Content-Type': 'application/json',
+              'Accept': 'text/event-stream'
+            }
+          }).then((response) => {
+            if (response.ok && response.body) {
+              const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+              let result = "";
+              const readStream = (): any =>
+                reader.read().then(({ value, done }) => {
+                  if (done) {
+                    reader.cancel();
+                    onStop();
+                    return Promise.resolve({ choices: [{ text: result }] });
+                  }
+
+                  const data = getDataFromStreamValue(value);
+                  if (!data || !data[0]) {
+                    return readStream();
+                  }
+
+                  let res = "";
+                  for (let i = 0; i < data.length; i++) {
+                    res += data[i].choices[0]?.text || "";
+                  }
+                  result += res;
+                  onContent(res);
                   return readStream();
                 });
               return readStream();
@@ -420,100 +579,6 @@ export async function openAI(
     }
   }
 } */
-
-
-// 升级2-1-1-1-1-push7/9-1-push12/12
-export async function openAIWithStream(
-  input: string,
-  openAiOptions: OpenAIOptions,
-  onContent: (content: string) => void,
-  onStop: () => void
-): Promise<string | null> {
-  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
-
-  try {
-    const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
-    if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
-      inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
-    }
-
-    const body = {
-      messages: inputMessages,
-      temperature: options.temperature,
-      max_tokens: options.maxTokens,
-      top_p: 1,
-      frequency_penalty: 0,
-      presence_penalty: 0,
-      model: options.completionEngine!,
-      stream: true,
-    };
-
-    const response = await backOff(
-      () =>
-        fetch(`${options.completionEndpoint}/chat/completions`, {
-          method: "POST",
-          body: JSON.stringify(body),
-          headers: {
-            Authorization: `Bearer ${options.apiKey}`,
-            'Content-Type': 'application/json',
-            'Accept': 'text/event-stream'
-          }
-        }).then(async (response) => {
-          if (response.ok && response.body) {
-            const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-            let result = "";
-
-            const readStream = (): any =>
-              reader.read().then(({ value, done }) => {
-                if (done) {
-                  reader.cancel();
-                  onStop();
-                  return Promise.resolve({ choices: [{ message: { content: result } }] });
-                }
-
-                const data = getDataFromStreamValue(value);
-                if (!data || !data[0]) {
-                  return readStream();
-                }
-
-                let res = "";
-                for (let i = 0; i < data.length; i++) {
-                  res += data[i].choices[0]?.delta?.content || "";
-                }
-                result += res;
-                onContent(res);
-                return readStream();
-              });
-
-            return readStream();
-          } else if (response.status === 429) {
-            console.warn("Rate limit exceeded. Retrying...");
-            throw new Error("Rate limit exceeded.");
-          } else {
-            throw new Error(`API request failed with status ${response.status}`);
-          }
-        }),
-      retryOptions
-    );
-
-    if (response) {
-      const choices = (response as OpenAI.Chat.Completions.ChatCompletion)?.choices;
-      if (choices && choices[0] && choices[0].message && choices[0].message.content && choices[0].message.content.length > 0) {
-        return trimLeadingWhitespace(choices[0].message.content);
-      }
-    }
-
-    return null;
-  } catch (e: any) {
-    console.error("Error in openAIWithStream:", e);
-    if (e?.response?.data?.error) {
-      console.error(e?.response?.data?.error);
-      throw new Error(e?.response?.data?.error?.message);
-    } else {
-      throw e;
-    }
-  }
-}
 
 function getDataFromStreamValue(value: string) {
   const matches = [...value.split("data:")];
@@ -639,22 +704,22 @@ export async function openAIWithStreamGpts(
       top_p: 1,
       frequency_penalty: 0,
       presence_penalty: 0,
-      model: options.gpts,
+      model: options.gpts,  // 单独增加
       stream: true,
     };
 
     const response = await backOff(
       () =>
-        fetch(`${options.completionEndpoint}/chat/completions`, {
+        fetch(`${options.completionEndpoint}/chat/completions`, {    // 内嵌了gpts（为model）的body体，只请求/chat/completions格式
           method: "POST",
-          body: JSON.stringify(body),
+          body: JSON.stringify(body),// 此处有内嵌的 model: options.gpts
           headers: {
             Authorization: `Bearer ${options.apiKey}`,
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream',
-            'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
+            'User-Agent': 'Apifox/1.0.0 (https://apifox.com)', //单独增加
           },
-          redirect: 'follow'
+          redirect: 'follow'//单独增加
         }).then(async (response) => {
           if (response.ok && response.body) {
             const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();

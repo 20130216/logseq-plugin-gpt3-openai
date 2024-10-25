@@ -582,9 +582,6 @@ export async function openAI(
   }
 } */
 
-  // runGptBlock中的openAIWithStream等三个函数的机器注释的定稿版（10.25号定稿，含“错误中文提醒处理”）；总共进行了30次(上次递交只有25次)测试,一次都没有出错！！！ 
-  // 优化版本（定稿版）在代码可读性、健壮性和调试方面都有所提升，但也增加了一些额外的检查逻辑。这些优化点在实际应用中通常是值得的，特别是在处理复杂和不确定的外部数据时
-
   // 1.行分割和过滤：先按行分割，再过滤掉空行；（原始版本：直接按 data: 分割。）更精确地处理多行数据，避免因单行数据包含多个 data: 导致的解析错误。
   // 2.JSON 完整性检查：在解析 JSON 之前，检查数据是否以 { 开头和 } 结尾。（原始版本：直接尝试解析 JSON。）避免因不完整的 JSON 数据导致的解析错误，提高代码的健壮性。
   // 3.调试信息：优化版本：增加了调试信息输出，方便排查问题。（原始版本：没有调试信息输出。）优点：便于调试和问题排查。 
@@ -613,6 +610,11 @@ export async function openAI(
       return null;
     }).filter(Boolean); // 过滤掉所有 null 和 undefined 值
   }
+
+
+  // runGptBlock中的openAIWithStream的机器注释+异常分类处理的定稿版（10.25号定稿，含9种异常分类处理的场景）；总共进行了40次测试,一次都没有出错！！！ 
+  // 优化版本（定稿版）在代码可读性、健壮性和调试方面都有所提升，但也增加了一些额外的检查逻辑。这些优化点在实际应用中通常是值得的，特别是在处理复杂和不确定的外部数据时
+
   // 1.异步处理：使用 async/await 和 Promise 结合的方式，使得代码更加清晰易读。
   // 2.空值检查：增加了对 value 的空值检查，避免了可能的 null 或 undefined 错误 
   // 3.超时机制：增加了超时机制，如果流读取超过 30 秒则取消读取器并抛出错误，提高了系统的健壮性。
@@ -628,8 +630,6 @@ export async function openAI(
   
     try {
       if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o")) {
-        // console.log("engine is: ", engine);
-        // console.log("\nchatCompletionEndpoint is: ", options.completionEndpoint);
         const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
         if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
           inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
@@ -645,78 +645,76 @@ export async function openAI(
           stream: true
         };
   
-        const response = await backOff(
-          () =>
-            fetch(`${options.completionEndpoint}/chat/completions`, {
-              method: "POST",
-              body: JSON.stringify(body),
-              headers: {
-                Authorization: `Bearer ${options.apiKey}`,
-                'Content-Type': 'application/json',
-                'Accept': 'text/event-stream'
-              }
-            }).then(async (response) => {
-              if (response.ok && response.body) {
-                const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-                let result = "";
-                const readStream = async (): Promise<any> => {
-                  const { value, done } = await reader.read(); // 读取流中的下一个值
-                  if (done) {
-                    reader.cancel(); // 如果流结束，取消读取器
-                    onStop(); // 调用停止回调
-                    return Promise.resolve({ choices: [{ message: { content: result } }] }); // 返回最终结果
-                  }
+        const response = await fetch(`${options.completionEndpoint}/chat/completions`, {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: {
+            Authorization: `Bearer ${options.apiKey}`,
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream'
+          },
+          signal: AbortSignal.timeout(30000) // 设置请求超时
+        });
   
-                  if (value !== null && value !== undefined) { // 检查值是否为 null 或 undefined
-                    const data = getDataFromStreamValue(value); // 解析流数据
-                    if (data && data[0]) { // 检查解析的数据是否有效
-                      let res = "";
-                      for (let i = 0; i < data.length; i++) {
-                        res += data[i].choices[0]?.delta?.content || ""; // 将解析的数据累加到结果中
-                      }
-                      result += res; // 更新最终结果
-                      onContent(res); // 调用内容回调
-                    }
-                  }
-  
-                  // 设置超时机制
-                  const timeoutId = setTimeout(() => {
-                    reader.cancel(); // 如果超时，取消读取器
-                    onStop(); // 调用停止回调
-                    console.error("流超时"); // 打印错误信息
-                    throw new Error("流超时"); // 抛出超时错误
-                  }, 30000);
-  
-                  const promise = readStream(); // 递归调用读取流
-                  promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
-                  return promise;
-                };
-                return readStream().catch(error => {
-                  console.error("读取流时发生错误:", error); // 打印读取流时的错误信息
-                  throw error;
-                });
-              } else {
-                return Promise.reject(response); // 如果响应不成功，拒绝 Promise
-              }
-            }),
-          retryOptions
-        );
-  
-        if (response) {
-          const choices = (response as OpenAI.Chat.Completions.ChatCompletion)?.choices;
-          if (
-            choices &&
-            choices[0] &&
-            choices[0].message &&
-            choices[0].message.content &&
-            choices[0].message.content.length > 0
-          ) {
-            return trimLeadingWhitespace(choices[0].message.content); // 返回解析后的最终内容
+        if (!response.ok) {
+          const errorData = await response.json();
+          if (response.status === 401) {
+            throw new Error("OpenAI API 密钥无效。");
+          } else if (response.status === 429) {
+            throw new Error("超出 OpenAI API 配额。");
+          } else if (response.status === 400) {
+            throw new Error(`请求参数错误: ${errorData.message}`);
+          } else if (response.status === 500) {
+            throw new Error("服务器内部错误。");
+          } else if (response.status === 503) {
+            throw new Error("服务不可用。");
           } else {
-            return null; // 如果没有有效内容，返回 null
+            throw new Error(`请求失败，状态码: ${response.status}, 错误信息: ${errorData.message}`);
           }
+        }
+  
+        if (response.body) {
+          const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+          let result = "";
+          const readStream = async (): Promise<any> => {
+            const { value, done } = await reader.read(); // 读取流中的下一个值
+            if (done) {
+              reader.cancel(); // 如果流结束，取消读取器
+              onStop(); // 调用停止回调
+              return Promise.resolve({ choices: [{ message: { content: result } }] }); // 返回最终结果
+            }
+  
+            if (value !== null && value !== undefined) { // 检查值是否为 null 或 undefined
+              const data = getDataFromStreamValue(value); // 解析流数据
+              if (data && data[0]) { // 检查解析的数据是否有效
+                let res = "";
+                for (let i = 0; i < data.length; i++) {
+                  res += data[i].choices[0]?.delta?.content || ""; // 将解析的数据累加到结果中
+                }
+                result += res; // 更新最终结果
+                onContent(res); // 调用内容回调
+              }
+            }
+  
+            // 设置超时机制
+            const timeoutId = setTimeout(() => {
+              reader.cancel(); // 如果超时，取消读取器
+              onStop(); // 调用停止回调
+              console.error("输出数据流超时"); // 打印错误信息
+              throw new Error("输出数据流超时"); // 抛出超时错误
+            }, 30000);
+  
+            const promise = readStream(); // 递归调用读取流
+            promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
+            return promise;
+          };
+  
+          return readStream().catch(error => {
+            console.error("读取流时发生错误:", error); // 打印读取流时的错误信息
+            throw error;
+          });
         } else {
-          return null; // 如果响应为空，返回 null
+          return null; // 如果响应体为空，返回 null
         }
       } else {
         const body = {
@@ -730,82 +728,80 @@ export async function openAI(
           stream: true
         };
   
-        const response = await backOff(
-          () =>
-            fetch(`${options.completionEndpoint}/completions`, {
-              method: "POST",
-              body: JSON.stringify(body),
-              headers: {
-                Authorization: `Bearer ${options.apiKey}`,
-                'Content-Type': 'application/json',
-                'Accept': 'text/event-stream'
-              }
-            }).then(async (response) => {
-              if (response.ok && response.body) {
-                const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-                let result = "";
-                const readStream = async (): Promise<any> => {
-                  const { value, done } = await reader.read(); // 读取流中的下一个值
-                  if (done) {
-                    reader.cancel(); // 如果流结束，取消读取器
-                    onStop(); // 调用停止回调
-                    return Promise.resolve({ choices: [{ text: result }] }); // 返回最终结果
-                  }
+        const response = await fetch(`${options.completionEndpoint}/completions`, {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: {
+            Authorization: `Bearer ${options.apiKey}`,
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream'
+          },
+          signal: AbortSignal.timeout(30000) // 设置请求超时
+        });
   
-                  if (value !== null && value !== undefined) { // 检查值是否为 null 或 undefined
-                    const data = getDataFromStreamValue(value); // 解析流数据
-                    if (data && data[0]) { // 检查解析的数据是否有效
-                      let res = "";
-                      for (let i = 0; i < data.length; i++) {
-                        res += data[i].choices[0]?.text || ""; // 将解析的数据累加到结果中
-                      }
-                      result += res; // 更新最终结果
-                      onContent(res); // 调用内容回调
-                    }
-                  }
-  
-                  // 设置超时机制
-                  const timeoutId = setTimeout(() => {
-                    reader.cancel(); // 如果超时，取消读取器
-                    onStop(); // 调用停止回调
-                    console.error("流超时"); // 打印错误信息
-                    throw new Error("流超时"); // 抛出超时错误
-                  }, 30000);
-  
-                  const promise = readStream(); // 递归调用读取流
-                  promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
-                  return promise;
-                };
-                return readStream().catch(error => {
-                  console.error("读取流时发生错误:", error); // 打印读取流时的错误信息
-                  throw error;
-                });
-              } else {
-                return Promise.reject(response); // 如果响应不成功，拒绝 Promise
-              }
-            }),
-          retryOptions
-        );
-  
-        if (response) {
-          const choices = (response as OpenAI.Completion)?.choices;
-          if (
-            choices &&
-            choices[0] &&
-            choices[0].text &&
-            choices[0].text.length > 0
-          ) {
-            return trimLeadingWhitespace(choices[0].text); // 返回解析后的最终内容
+        if (!response.ok) {
+          const errorData = await response.json();
+          if (response.status === 401) {
+            throw new Error("OpenAI API 密钥无效。");
+          } else if (response.status === 429) {
+            throw new Error("超出 OpenAI API 配额。");
+          } else if (response.status === 400) {
+            throw new Error(`请求参数错误: ${errorData.message}`);
+          } else if (response.status === 500) {
+            throw new Error("服务器内部错误。");
+          } else if (response.status === 503) {
+            throw new Error("服务不可用。");
           } else {
-            return null; // 如果没有有效内容，返回 null
+            throw new Error(`请求失败，状态码: ${response.status}, 错误信息: ${errorData.message}`);
           }
+        }
+  
+        if (response.body) {
+          const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+          let result = "";
+          const readStream = async (): Promise<any> => {
+            const { value, done } = await reader.read(); // 读取流中的下一个值
+            if (done) {
+              reader.cancel(); // 如果流结束，取消读取器
+              onStop(); // 调用停止回调
+              return Promise.resolve({ choices: [{ text: result }] }); // 返回最终结果
+            }
+  
+            if (value !== null && value !== undefined) { // 检查值是否为 null 或 undefined
+              const data = getDataFromStreamValue(value); // 解析流数据
+              if (data && data[0]) { // 检查解析的数据是否有效
+                let res = "";
+                for (let i = 0; i < data.length; i++) {
+                  res += data[i].choices[0]?.text || ""; // 将解析的数据累加到结果中
+                }
+                result += res; // 更新最终结果
+                onContent(res); // 调用内容回调
+              }
+            }
+  
+            // 设置超时机制
+            const timeoutId = setTimeout(() => {
+              reader.cancel(); // 如果超时，取消读取器
+              onStop(); // 调用停止回调
+              console.error("输出数据流超时"); // 打印错误信息
+              throw new Error("输出数据流超时"); // 抛出超时错误
+            }, 30000);
+  
+            const promise = readStream(); // 递归调用读取流
+            promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
+            return promise;
+          };
+  
+          return readStream().catch(error => {
+            console.error("读取流时发生错误:", error); // 打印读取流时的错误信息
+            throw error;
+          });
         } else {
-          return null; // 如果响应为空，返回 null
+          return null; // 如果响应体为空，返回 null
         }
       }
     } catch (e: any) {
-      // 统一错误提示
-      const errorMessage = "抱歉，网络略有不畅导致系统超时，请稍后重试"; // 控制台用户友好的错误提示信息
+      const errorMessage = e.name === 'AbortError' ? "网络请求超时" : e.message;
       console.error(errorMessage); // 打印错误信息到控制台
       const errorMessageElement = document.getElementById('error-message'); // 获取错误消息元素
       if (errorMessageElement) {
@@ -814,6 +810,8 @@ export async function openAI(
       throw new Error(errorMessage); // 抛出错误，以便上层处理
     }
   }
+
+
   
   // 优化版本：使用 text 作为参数名（原始版本：使用 s 作为参数名。）参数名更具描述性，代码可读性更好。
   function trimLeadingWhitespace(text: string): string {

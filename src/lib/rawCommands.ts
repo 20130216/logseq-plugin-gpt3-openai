@@ -47,51 +47,60 @@ import { getOpenaiSettings } from "./settings";
 } */
 
 
-  // 所有异常最终都会被 runGptBlock 捕获并传递给 handleOpenAIError 函数来处理，那么你只需要在 handleOpenAIError 中分门别类地处理各种异常情况即可。这样可以确保所有的异常处理逻辑集中在一个地方，便于维护和管理。  
-function handleOpenAIError(e: any) {
-  if (
-    !e.response ||
-    !e.response.status ||
-    !e.response.data ||
-    !e.response.data.error
-  ) {
-    console.error(`未知的 OpenAI 错误: ${e}`);
-    // logseq.App.showMsg("未知的 OpenAI 错误，请稍后重试", "error");
-    logseq.App.showMsg("抱歉，网络略有不畅导致系统超时，请稍后重试", "error"); //特意把此条改成这样的提醒，方便用户认知
-    return;
-  }
-
-  const httpStatus = e.response.status;
-  const errorCode = e.response.data.error.code;
-  const errorMessage = e.response.data.error.message;
-  const errorType = e.response.data.error.type;
-
-  if (httpStatus === 401) {
-    console.error("OpenAI API 密钥无效。");
-    logseq.App.showMsg("无效的 OpenAI API 密钥", "error");
-  } else if (httpStatus === 429) {
-    if (errorType === "insufficient_quota") {
-      console.error(
-        "超出 OpenAI API 配额。您的试用期可能已结束。您可以在 https://beta.openai.com/account/billing/overview 购买更多配额。"
-      );
-      logseq.App.showMsg("OpenAI 配额已用完", "error");
-    } else {
-      console.warn(
-        "OpenAI API 请求频率过高。请减缓请求速度。"
-      );
-      logseq.App.showMsg("OpenAI 请求频率过高", "warning");
+  // 10种应用场景的分门别类处理：所有异常最终都会被 runGptBlock 捕获并传递给 handleOpenAIError 函数来处理，那么你只需要在 handleOpenAIError 中分门别类地处理各种异常情况即可。这样可以确保所有的异常处理逻辑集中在一个地方，便于维护和管理。  
+  function handleOpenAIError(e: any) {
+    if (
+      !e.response ||
+      !e.response.status ||
+      !e.response.data ||
+      !e.response.data.error
+    ) {
+      console.error(`未知的 OpenAI 错误: ${e}`);
+      logseq.App.showMsg("未知的 OpenAI 错误，一般是网络不畅导致的系统超时，请稍后重试！", "error");
+      return;
     }
-  } else if (httpStatus === 400) {
-    console.error(`请求参数错误: ${errorMessage}`);
-    logseq.App.showMsg("请求参数错误，请检查输入", "error");
-  } else if (httpStatus >= 500) {
-    console.error(`OpenAI 服务器错误: ${errorMessage}`);
-    logseq.App.showMsg("OpenAI 服务器错误，请稍后重试", "error");
-  } else {
-    console.error(`未知的 OpenAI 错误: ${errorType} ${errorCode} ${errorMessage}`);
-    logseq.App.showMsg("未知的 OpenAI 错误，请稍后重试", "error");
+  
+    const httpStatus = e.response.status;
+    const errorCode = e.response.data.error.code;
+    const errorMessage = e.response.data.error.message;
+    const errorType = e.response.data.error.type;
+  
+    if (httpStatus === 401) {
+      console.error("OpenAI API 密钥无效。");
+      logseq.App.showMsg("无效的 OpenAI API 密钥！", "error");
+    } else if (httpStatus === 429) {
+      if (errorType === "insufficient_quota") {
+        console.error(
+          "超出 OpenAI API 配额。您的试用期可能已结束。您可以在 https://gptgod.cloud/account/中购买更多配额。"
+        );
+        logseq.App.showMsg("OpenAI 配额已用完！", "error");
+      } else {
+        console.warn(
+          "OpenAI API 请求频率过高。请减缓请求速度。"
+        );
+        logseq.App.showMsg("OpenAI 请求频率过高！", "warning");
+      }
+    } else if (httpStatus === 400) {
+      console.error(`请求参数错误: ${errorMessage}`);
+      logseq.App.showMsg("请求参数错误，请检查输入！", "error");
+    } else if (httpStatus === 500) {
+      console.error(`OpenAI 服务器错误: ${errorMessage}`);
+      logseq.App.showMsg("OpenAI 服务器错误，请稍后重试！", "error");
+    } else if (httpStatus === 503) {
+      console.error(`OpenAI 服务不可用: ${errorMessage}`);
+      logseq.App.showMsg("OpenAI 服务不可用，请稍后重试！", "error");
+    } else if (e.name === 'AbortError') {
+      console.error("网络请求超时");
+      logseq.App.showMsg("网络请求超时，请检查网络连接！", "error");
+    } else if (e.message === "输出数据流超时") {
+      console.error("输出数据流超时");
+      logseq.App.showMsg("输出数据流超时，请检查网络连接！", "error");
+    } else {
+      console.error(`未知的 OpenAI 错误: ${errorType} ${errorCode} ${errorMessage}`);
+      logseq.App.showMsg("未知的 OpenAI 错误，请稍后重试！", "error");
+    }
   }
-}
+  
 
 function validateSettings(settings: OpenAIOptions) {
   if (!settings.apiKey) {

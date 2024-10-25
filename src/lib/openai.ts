@@ -582,18 +582,12 @@ export async function openAI(
   }
 } */
 
-  // 关键行代码机器注释版+'production'版+'development'版；更新后的第四次优化函数 分别25次'production'和5次的'development'测试,居然一次都没有出错！！！
+  // runGptBlock中的openAIWithStream等三个函数的机器注释的定稿版（10.25号定稿，含“错误中文提醒处理”）；总共进行了30次(上次递交只有25次)测试,一次都没有出错！！！ 
+  // 优化版本（定稿版）在代码可读性、健壮性和调试方面都有所提升，但也增加了一些额外的检查逻辑。这些优化点在实际应用中通常是值得的，特别是在处理复杂和不确定的外部数据时
 
-  // 异步处理：将 readStream 函数改为 async 函数，使用 await 关键字处理异步操作，提高了代码的可读性和维护性。
-  // 空值检查：增加了对 value 的空值检查，避免了可能的 null 或 undefined 错误
-  // 超时机制：引入了一个超时机制（30秒），如果流在规定时间内没有完成，则取消流并调用 onStop 回调，同时抛出超时错误；确保流在规定时间内完成，提高了系统的健壮性。
-  // 错误处理：提供了统一的用户友好的错误提示，并且可以在 UI 中显示错误信息，提升了用户体验。
-
-  // pnpm run build：构建生产版本，NODE_ENV 通常设置为 production，控制台提醒会被禁用或减少。在这个过程中，许多优化措施会被应用，例如代码压缩、资源最小化等
-  // pnpm run dev：启动开发服务器，NODE_ENV 通常设置为 development，控制台提醒会被保留。
-
-  // const isDevelopment = process.env.NODE_ENV === 'development';
-  const isDevelopment = process.env.NODE_ENV === 'production';
+  // 行分割和过滤：先按行分割，再过滤掉空行；（原始版本：直接按 data: 分割。）更精确地处理多行数据，避免因单行数据包含多个 data: 导致的解析错误。
+  // JSON 完整性检查：在解析 JSON 之前，检查数据是否以 { 开头和 } 结尾。（原始版本：直接尝试解析 JSON。）避免因不完整的 JSON 数据导致的解析错误，提高代码的健壮性。
+  // 调试信息：优化版本：增加了调试信息输出，方便排查问题。（原始版本：没有调试信息输出。）优点：便于调试和问题排查。 
 
   function getDataFromStreamValue(value: string): any[] {
     const lines = value.split('\n').filter(line => line.trim() !== '');
@@ -608,22 +602,21 @@ export async function openAI(
           if (data.startsWith("{") && data.endsWith("}")) {
             return JSON.parse(data);
           } else {
-            if (isDevelopment) {
-              console.debug("Incomplete JSON data:", data); // 开发模式下调试输出不完整的 JSON 数据
-            }
+            console.debug("不完整的 JSON 数据:", data); // 调试输出不完整的 JSON 数据
             return null;
           }
         } catch (error) {
-          if (isDevelopment) {
-            console.debug("Failed to parse JSON from stream:", line, error); // 开发模式下调试输出解析失败的信息
-          }
+          console.debug("从流中解析 JSON 失败:", line, error); // 调试输出解析失败的信息
           return null;
         }
       }
       return null;
     }).filter(Boolean); // 过滤掉所有 null 和 undefined 值
   }
-  
+  // 异步处理：使用 async/await 和 Promise 结合的方式，使得代码更加清晰易读。
+  // 空值检查：增加了对 value 的空值检查，避免了可能的 null 或 undefined 错误 
+  // 超时机制：增加了超时机制，如果流读取超过 30 秒则取消读取器并抛出错误，提高了系统的健壮性。
+  // 错误处理：提供了统一的用户友好的错误提示，并且可以在 UI 中显示错误信息，提升了用户体验。
   export async function openAIWithStream(
     input: string,
     openAiOptions: OpenAIOptions,
@@ -690,8 +683,8 @@ export async function openAI(
                   const timeoutId = setTimeout(() => {
                     reader.cancel(); // 如果超时，取消读取器
                     onStop(); // 调用停止回调
-                    console.error("Stream timed out"); // 打印错误信息
-                    throw new Error("Stream timed out"); // 抛出超时错误
+                    console.error("流超时"); // 打印错误信息
+                    throw new Error("流超时"); // 抛出超时错误
                   }, 30000);
   
                   const promise = readStream(); // 递归调用读取流
@@ -699,7 +692,7 @@ export async function openAI(
                   return promise;
                 };
                 return readStream().catch(error => {
-                  console.error("Error in readStream:", error); // 打印读取流时的错误信息
+                  console.error("读取流时发生错误:", error); // 打印读取流时的错误信息
                   throw error;
                 });
               } else {
@@ -775,8 +768,8 @@ export async function openAI(
                   const timeoutId = setTimeout(() => {
                     reader.cancel(); // 如果超时，取消读取器
                     onStop(); // 调用停止回调
-                    console.error("Stream timed out"); // 打印错误信息
-                    throw new Error("Stream timed out"); // 抛出超时错误
+                    console.error("流超时"); // 打印错误信息
+                    throw new Error("流超时"); // 抛出超时错误
                   }, 30000);
   
                   const promise = readStream(); // 递归调用读取流
@@ -784,7 +777,7 @@ export async function openAI(
                   return promise;
                 };
                 return readStream().catch(error => {
-                  console.error("Error in readStream:", error); // 打印读取流时的错误信息
+                  console.error("读取流时发生错误:", error); // 打印读取流时的错误信息
                   throw error;
                 });
               } else {
@@ -822,6 +815,7 @@ export async function openAI(
     }
   }
   
+  // 优化版本：使用 text 作为参数名（原始版本：使用 s 作为参数名。）参数名更具描述性，代码可读性更好。
   function trimLeadingWhitespace(text: string): string {
     return text.replace(/^\s+/, ''); // 移除字符串开头的空白字符
   }

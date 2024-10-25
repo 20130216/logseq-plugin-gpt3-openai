@@ -582,7 +582,7 @@ export async function openAI(
   }
 } */
 
-  // 关键行代码机器注释版+'production'版+'development'版；更新后的第四次优化函数 分别20次'production'和5次的'development'测试,居然一次都没有出错！！！
+  // 关键行代码机器注释版+'production'版+'development'版；更新后的第四次优化函数 分别25次'production'和5次的'development'测试,居然一次都没有出错！！！
 
   // 异步处理：将 readStream 函数改为 async 函数，使用 await 关键字处理异步操作，提高了代码的可读性和维护性。
   // 空值检查：增加了对 value 的空值检查，避免了可能的 null 或 undefined 错误
@@ -812,7 +812,7 @@ export async function openAI(
       }
     } catch (e: any) {
       // 统一错误提示
-      const errorMessage = "抱歉，网络略有不畅导致系统超时，请稍后重试"; // 用户友好的错误提示信息
+      const errorMessage = "抱歉，网络略有不畅导致系统超时，请稍后重试"; // 控制台用户友好的错误提示信息
       console.error(errorMessage); // 打印错误信息到控制台
       const errorMessageElement = document.getElementById('error-message'); // 获取错误消息元素
       if (errorMessageElement) {

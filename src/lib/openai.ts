@@ -582,13 +582,48 @@ export async function openAI(
   }
 } */
 
-  // 调试信息：新增的调试信息有助于开发和维护阶段的问题排查，尤其是在复杂的生产环境中。
-  // 异步函数：将 readStream 改为异步函数，使代码更易读，避免了回调地狱，提高了代码的可维护性。
-  // 超时机制：增加了超时机制，提高了系统的健壮性和稳定性，防止因长时间无响应而导致的资源浪费。
-  // 错误处理：增强了错误处理，提供了更详细的错误信息，并对前端用户进行了友好的提示，提高了用户体验。
+  // 关键行代码机器注释版+'production'版+'development'版；更新后的第四次优化函数 分别20次'production'和5次的'development'测试,居然一次都没有出错！！！
 
-  // 更新后的第三次优化函数 10次测试有8次没有出错，出错的2次，再测试还是正确的； 只是出现：Unknown OpenAI Error的提醒框 但可以作为一个过渡版本 还不错
+  // 异步处理：将 readStream 函数改为 async 函数，使用 await 关键字处理异步操作，提高了代码的可读性和维护性。
+  // 空值检查：增加了对 value 的空值检查，避免了可能的 null 或 undefined 错误
+  // 超时机制：引入了一个超时机制（30秒），如果流在规定时间内没有完成，则取消流并调用 onStop 回调，同时抛出超时错误；确保流在规定时间内完成，提高了系统的健壮性。
+  // 错误处理：提供了统一的用户友好的错误提示，并且可以在 UI 中显示错误信息，提升了用户体验。
 
+  // pnpm run build：构建生产版本，NODE_ENV 通常设置为 production，控制台提醒会被禁用或减少。在这个过程中，许多优化措施会被应用，例如代码压缩、资源最小化等
+  // pnpm run dev：启动开发服务器，NODE_ENV 通常设置为 development，控制台提醒会被保留。
+
+  // const isDevelopment = process.env.NODE_ENV === 'development';
+  const isDevelopment = process.env.NODE_ENV === 'production';
+
+  function getDataFromStreamValue(value: string): any[] {
+    const lines = value.split('\n').filter(line => line.trim() !== '');
+    return lines.map(line => {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") {
+          return null; // 跳过 [DONE] 标记
+        }
+        try {
+          // 检查 JSON 字符串是否完整
+          if (data.startsWith("{") && data.endsWith("}")) {
+            return JSON.parse(data);
+          } else {
+            if (isDevelopment) {
+              console.debug("Incomplete JSON data:", data); // 开发模式下调试输出不完整的 JSON 数据
+            }
+            return null;
+          }
+        } catch (error) {
+          if (isDevelopment) {
+            console.debug("Failed to parse JSON from stream:", line, error); // 开发模式下调试输出解析失败的信息
+          }
+          return null;
+        }
+      }
+      return null;
+    }).filter(Boolean); // 过滤掉所有 null 和 undefined 值
+  }
+  
   export async function openAIWithStream(
     input: string,
     openAiOptions: OpenAIOptions,
@@ -600,9 +635,8 @@ export async function openAI(
   
     try {
       if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o")) {
-        console.log("engine is: ", engine);
-        console.log("\nchatCompletionEndpoint is: ", options.completionEndpoint);
-  
+        // console.log("engine is: ", engine);
+        // console.log("\nchatCompletionEndpoint is: ", options.completionEndpoint);
         const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
         if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
           inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
@@ -633,42 +667,43 @@ export async function openAI(
                 const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
                 let result = "";
                 const readStream = async (): Promise<any> => {
-                  const { value, done } = await reader.read();
+                  const { value, done } = await reader.read(); // 读取流中的下一个值
                   if (done) {
-                    reader.cancel();
-                    onStop();
-                    return Promise.resolve({ choices: [{ message: { content: result } }] });
+                    reader.cancel(); // 如果流结束，取消读取器
+                    onStop(); // 调用停止回调
+                    return Promise.resolve({ choices: [{ message: { content: result } }] }); // 返回最终结果
                   }
   
-                  if (value !== null && value !== undefined) {
-                    const data = getDataFromStreamValue(value);
-                    if (data && data[0]) {
+                  if (value !== null && value !== undefined) { // 检查值是否为 null 或 undefined
+                    const data = getDataFromStreamValue(value); // 解析流数据
+                    if (data && data[0]) { // 检查解析的数据是否有效
                       let res = "";
                       for (let i = 0; i < data.length; i++) {
-                        res += data[i].choices[0]?.delta?.content || "";
+                        res += data[i].choices[0]?.delta?.content || ""; // 将解析的数据累加到结果中
                       }
-                      result += res;
-                      onContent(res);
+                      result += res; // 更新最终结果
+                      onContent(res); // 调用内容回调
                     }
                   }
   
+                  // 设置超时机制
                   const timeoutId = setTimeout(() => {
-                    reader.cancel();
-                    onStop();
-                    console.error("Stream timed out");
-                    throw new Error("Stream timed out");
+                    reader.cancel(); // 如果超时，取消读取器
+                    onStop(); // 调用停止回调
+                    console.error("Stream timed out"); // 打印错误信息
+                    throw new Error("Stream timed out"); // 抛出超时错误
                   }, 30000);
   
-                  const promise = readStream();
-                  promise.then(() => clearTimeout(timeoutId));
+                  const promise = readStream(); // 递归调用读取流
+                  promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
                   return promise;
                 };
                 return readStream().catch(error => {
-                  console.error("Error in readStream:", error);
+                  console.error("Error in readStream:", error); // 打印读取流时的错误信息
                   throw error;
                 });
               } else {
-                return Promise.reject(response);
+                return Promise.reject(response); // 如果响应不成功，拒绝 Promise
               }
             }),
           retryOptions
@@ -676,13 +711,19 @@ export async function openAI(
   
         if (response) {
           const choices = (response as OpenAI.Chat.Completions.ChatCompletion)?.choices;
-          if (choices && choices[0] && choices[0].message && choices[0].message.content && choices[0].message.content.length > 0) {
-            return trimLeadingWhitespace(choices[0].message.content);
+          if (
+            choices &&
+            choices[0] &&
+            choices[0].message &&
+            choices[0].message.content &&
+            choices[0].message.content.length > 0
+          ) {
+            return trimLeadingWhitespace(choices[0].message.content); // 返回解析后的最终内容
           } else {
-            return null;
+            return null; // 如果没有有效内容，返回 null
           }
         } else {
-          return null;
+          return null; // 如果响应为空，返回 null
         }
       } else {
         const body = {
@@ -711,42 +752,43 @@ export async function openAI(
                 const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
                 let result = "";
                 const readStream = async (): Promise<any> => {
-                  const { value, done } = await reader.read();
+                  const { value, done } = await reader.read(); // 读取流中的下一个值
                   if (done) {
-                    reader.cancel();
-                    onStop();
-                    return Promise.resolve({ choices: [{ text: result }] });
+                    reader.cancel(); // 如果流结束，取消读取器
+                    onStop(); // 调用停止回调
+                    return Promise.resolve({ choices: [{ text: result }] }); // 返回最终结果
                   }
   
-                  if (value !== null && value !== undefined) {
-                    const data = getDataFromStreamValue(value);
-                    if (data && data[0]) {
+                  if (value !== null && value !== undefined) { // 检查值是否为 null 或 undefined
+                    const data = getDataFromStreamValue(value); // 解析流数据
+                    if (data && data[0]) { // 检查解析的数据是否有效
                       let res = "";
                       for (let i = 0; i < data.length; i++) {
-                        res += data[i].choices[0]?.text || "";
+                        res += data[i].choices[0]?.text || ""; // 将解析的数据累加到结果中
                       }
-                      result += res;
-                      onContent(res);
+                      result += res; // 更新最终结果
+                      onContent(res); // 调用内容回调
                     }
                   }
   
+                  // 设置超时机制
                   const timeoutId = setTimeout(() => {
-                    reader.cancel();
-                    onStop();
-                    console.error("Stream timed out");
-                    throw new Error("Stream timed out");
+                    reader.cancel(); // 如果超时，取消读取器
+                    onStop(); // 调用停止回调
+                    console.error("Stream timed out"); // 打印错误信息
+                    throw new Error("Stream timed out"); // 抛出超时错误
                   }, 30000);
   
-                  const promise = readStream();
-                  promise.then(() => clearTimeout(timeoutId));
+                  const promise = readStream(); // 递归调用读取流
+                  promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
                   return promise;
                 };
                 return readStream().catch(error => {
-                  console.error("Error in readStream:", error);
+                  console.error("Error in readStream:", error); // 打印读取流时的错误信息
                   throw error;
                 });
               } else {
-                return Promise.reject(response);
+                return Promise.reject(response); // 如果响应不成功，拒绝 Promise
               }
             }),
           retryOptions
@@ -754,47 +796,36 @@ export async function openAI(
   
         if (response) {
           const choices = (response as OpenAI.Completion)?.choices;
-          if (choices && choices[0] && choices[0].text && choices[0].text.length > 0) {
-            return trimLeadingWhitespace(choices[0].text);
+          if (
+            choices &&
+            choices[0] &&
+            choices[0].text &&
+            choices[0].text.length > 0
+          ) {
+            return trimLeadingWhitespace(choices[0].text); // 返回解析后的最终内容
           } else {
-            return null;
+            return null; // 如果没有有效内容，返回 null
           }
         } else {
-          return null;
+          return null; // 如果响应为空，返回 null
         }
       }
     } catch (e: any) {
       // 统一错误提示
-      const errorMessage = "抱歉，网络略有不畅导致系统超时，请稍后重试";
-      console.error(errorMessage);
-      const errorMessageElement = document.getElementById('error-message');
+      const errorMessage = "抱歉，网络略有不畅导致系统超时，请稍后重试"; // 用户友好的错误提示信息
+      console.error(errorMessage); // 打印错误信息到控制台
+      const errorMessageElement = document.getElementById('error-message'); // 获取错误消息元素
       if (errorMessageElement) {
-        errorMessageElement.textContent = errorMessage;
+        errorMessageElement.textContent = errorMessage; // 更新错误消息元素的文本内容
       }
-      throw new Error(errorMessage);
+      throw new Error(errorMessage); // 抛出错误，以便上层处理
     }
   }
+  
+  function trimLeadingWhitespace(text: string): string {
+    return text.replace(/^\s+/, ''); // 移除字符串开头的空白字符
+  }
 
-
-
-
-
-
-function getDataFromStreamValue(value: string) {
-  const matches = [...value.split("data:")];
-  return matches.filter(content => content.trim().length > 0 && !content.trim().includes("[DONE]"))
-    .map(match =>{
-      try{
-        return JSON.parse(match)
-      } catch(e) {
-        return null
-      }
-    });
-}
-
-function trimLeadingWhitespace(s: string): string {
-  return s.replace(/^\s+/, "");
-}
 
 
 

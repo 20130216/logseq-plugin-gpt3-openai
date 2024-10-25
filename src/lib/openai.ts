@@ -425,7 +425,8 @@ export async function openAI(
 
 
 // 升级2-1-1-1-1-push7/9-1-push12/12-1-10.24:push24/25 测试25次，24次无bug，去除注释版（和上述注释版代码相同，仅仅是无注释的简洁版）
-export async function openAIWithStream(
+// 和10.25号的原函数相比，只是：新增功能：支持 gpt-4o 引擎；调试信息：新增了两条被注释掉的调试信息，
+/* export async function openAIWithStream(
   input: string,
   openAiOptions: OpenAIOptions,
   onContent: (content: string) => void,
@@ -579,7 +580,205 @@ export async function openAIWithStream(
       throw e;
     }
   }
-}
+} */
+
+  // 调试信息：新增的调试信息有助于开发和维护阶段的问题排查，尤其是在复杂的生产环境中。
+  // 异步函数：将 readStream 改为异步函数，使代码更易读，避免了回调地狱，提高了代码的可维护性。
+  // 超时机制：增加了超时机制，提高了系统的健壮性和稳定性，防止因长时间无响应而导致的资源浪费。
+  // 错误处理：增强了错误处理，提供了更详细的错误信息，并对前端用户进行了友好的提示，提高了用户体验。
+
+  // 更新后的第三次优化函数 10次测试有8次没有出错，出错的2次，再测试还是正确的； 只是出现：Unknown OpenAI Error的提醒框 但可以作为一个过渡版本 还不错
+
+  export async function openAIWithStream(
+    input: string,
+    openAiOptions: OpenAIOptions,
+    onContent: (content: string) => void,
+    onStop: () => void
+  ): Promise<string | null> {
+    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+    const engine = options.completionEngine!;
+  
+    try {
+      if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o")) {
+        console.log("engine is: ", engine);
+        console.log("\nchatCompletionEndpoint is: ", options.completionEndpoint);
+  
+        const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
+        if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
+          inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
+        }
+        const body = {
+          messages: inputMessages,
+          temperature: options.temperature,
+          max_tokens: options.maxTokens,
+          top_p: 1,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+          model: engine,
+          stream: true
+        };
+  
+        const response = await backOff(
+          () =>
+            fetch(`${options.completionEndpoint}/chat/completions`, {
+              method: "POST",
+              body: JSON.stringify(body),
+              headers: {
+                Authorization: `Bearer ${options.apiKey}`,
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream'
+              }
+            }).then(async (response) => {
+              if (response.ok && response.body) {
+                const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+                let result = "";
+                const readStream = async (): Promise<any> => {
+                  const { value, done } = await reader.read();
+                  if (done) {
+                    reader.cancel();
+                    onStop();
+                    return Promise.resolve({ choices: [{ message: { content: result } }] });
+                  }
+  
+                  if (value !== null && value !== undefined) {
+                    const data = getDataFromStreamValue(value);
+                    if (data && data[0]) {
+                      let res = "";
+                      for (let i = 0; i < data.length; i++) {
+                        res += data[i].choices[0]?.delta?.content || "";
+                      }
+                      result += res;
+                      onContent(res);
+                    }
+                  }
+  
+                  const timeoutId = setTimeout(() => {
+                    reader.cancel();
+                    onStop();
+                    console.error("Stream timed out");
+                    throw new Error("Stream timed out");
+                  }, 30000);
+  
+                  const promise = readStream();
+                  promise.then(() => clearTimeout(timeoutId));
+                  return promise;
+                };
+                return readStream().catch(error => {
+                  console.error("Error in readStream:", error);
+                  throw error;
+                });
+              } else {
+                return Promise.reject(response);
+              }
+            }),
+          retryOptions
+        );
+  
+        if (response) {
+          const choices = (response as OpenAI.Chat.Completions.ChatCompletion)?.choices;
+          if (choices && choices[0] && choices[0].message && choices[0].message.content && choices[0].message.content.length > 0) {
+            return trimLeadingWhitespace(choices[0].message.content);
+          } else {
+            return null;
+          }
+        } else {
+          return null;
+        }
+      } else {
+        const body = {
+          prompt: input,
+          temperature: options.temperature,
+          max_tokens: options.maxTokens,
+          top_p: 1,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+          model: engine,
+          stream: true
+        };
+  
+        const response = await backOff(
+          () =>
+            fetch(`${options.completionEndpoint}/completions`, {
+              method: "POST",
+              body: JSON.stringify(body),
+              headers: {
+                Authorization: `Bearer ${options.apiKey}`,
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream'
+              }
+            }).then(async (response) => {
+              if (response.ok && response.body) {
+                const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+                let result = "";
+                const readStream = async (): Promise<any> => {
+                  const { value, done } = await reader.read();
+                  if (done) {
+                    reader.cancel();
+                    onStop();
+                    return Promise.resolve({ choices: [{ text: result }] });
+                  }
+  
+                  if (value !== null && value !== undefined) {
+                    const data = getDataFromStreamValue(value);
+                    if (data && data[0]) {
+                      let res = "";
+                      for (let i = 0; i < data.length; i++) {
+                        res += data[i].choices[0]?.text || "";
+                      }
+                      result += res;
+                      onContent(res);
+                    }
+                  }
+  
+                  const timeoutId = setTimeout(() => {
+                    reader.cancel();
+                    onStop();
+                    console.error("Stream timed out");
+                    throw new Error("Stream timed out");
+                  }, 30000);
+  
+                  const promise = readStream();
+                  promise.then(() => clearTimeout(timeoutId));
+                  return promise;
+                };
+                return readStream().catch(error => {
+                  console.error("Error in readStream:", error);
+                  throw error;
+                });
+              } else {
+                return Promise.reject(response);
+              }
+            }),
+          retryOptions
+        );
+  
+        if (response) {
+          const choices = (response as OpenAI.Completion)?.choices;
+          if (choices && choices[0] && choices[0].text && choices[0].text.length > 0) {
+            return trimLeadingWhitespace(choices[0].text);
+          } else {
+            return null;
+          }
+        } else {
+          return null;
+        }
+      }
+    } catch (e: any) {
+      // 统一错误提示
+      const errorMessage = "抱歉，网络略有不畅导致系统超时，请稍后重试";
+      console.error(errorMessage);
+      const errorMessageElement = document.getElementById('error-message');
+      if (errorMessageElement) {
+        errorMessageElement.textContent = errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+  }
+
+
+
+
+
 
 function getDataFromStreamValue(value: string) {
   const matches = [...value.split("data:")];

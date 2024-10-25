@@ -585,9 +585,9 @@ export async function openAI(
   // runGptBlock中的openAIWithStream等三个函数的机器注释的定稿版（10.25号定稿，含“错误中文提醒处理”）；总共进行了30次(上次递交只有25次)测试,一次都没有出错！！！ 
   // 优化版本（定稿版）在代码可读性、健壮性和调试方面都有所提升，但也增加了一些额外的检查逻辑。这些优化点在实际应用中通常是值得的，特别是在处理复杂和不确定的外部数据时
 
-  // 行分割和过滤：先按行分割，再过滤掉空行；（原始版本：直接按 data: 分割。）更精确地处理多行数据，避免因单行数据包含多个 data: 导致的解析错误。
-  // JSON 完整性检查：在解析 JSON 之前，检查数据是否以 { 开头和 } 结尾。（原始版本：直接尝试解析 JSON。）避免因不完整的 JSON 数据导致的解析错误，提高代码的健壮性。
-  // 调试信息：优化版本：增加了调试信息输出，方便排查问题。（原始版本：没有调试信息输出。）优点：便于调试和问题排查。 
+  // 1.行分割和过滤：先按行分割，再过滤掉空行；（原始版本：直接按 data: 分割。）更精确地处理多行数据，避免因单行数据包含多个 data: 导致的解析错误。
+  // 2.JSON 完整性检查：在解析 JSON 之前，检查数据是否以 { 开头和 } 结尾。（原始版本：直接尝试解析 JSON。）避免因不完整的 JSON 数据导致的解析错误，提高代码的健壮性。
+  // 3.调试信息：优化版本：增加了调试信息输出，方便排查问题。（原始版本：没有调试信息输出。）优点：便于调试和问题排查。 
 
   function getDataFromStreamValue(value: string): any[] {
     const lines = value.split('\n').filter(line => line.trim() !== '');
@@ -613,10 +613,10 @@ export async function openAI(
       return null;
     }).filter(Boolean); // 过滤掉所有 null 和 undefined 值
   }
-  // 异步处理：使用 async/await 和 Promise 结合的方式，使得代码更加清晰易读。
-  // 空值检查：增加了对 value 的空值检查，避免了可能的 null 或 undefined 错误 
-  // 超时机制：增加了超时机制，如果流读取超过 30 秒则取消读取器并抛出错误，提高了系统的健壮性。
-  // 错误处理：提供了统一的用户友好的错误提示，并且可以在 UI 中显示错误信息，提升了用户体验。
+  // 1.异步处理：使用 async/await 和 Promise 结合的方式，使得代码更加清晰易读。
+  // 2.空值检查：增加了对 value 的空值检查，避免了可能的 null 或 undefined 错误 
+  // 3.超时机制：增加了超时机制，如果流读取超过 30 秒则取消读取器并抛出错误，提高了系统的健壮性。
+  // 4.错误处理：提供了统一的用户友好的错误提示，并且可以在 UI 中显示错误信息，提升了用户体验。
   export async function openAIWithStream(
     input: string,
     openAiOptions: OpenAIOptions,
@@ -907,7 +907,12 @@ export async function openAI(
         }
       } */
 
-// 升级2-2-1-1-1-push7/9-1-push12/12
+// runGptID中的openAIWithStreamGpts函数的机器注释的定稿版（10.25号定稿，含“错误中文提醒处理”）；总共进行了15左右的测试,一次都没有出错！！！
+
+// 1.异步处理：使用 async/await 语法，使代码更简洁、易读。
+// 2.空值检查：增加了对 value 是否为 null 或 undefined 的检查，避免因空值导致的运行时错误。
+// 3.超时机制：增加了超时机制，防止长时间挂起，提高系统的健壮性和用户体验。
+// 4.统一错误提示：无论错误的具体原因是什么，都提供一个统一的用户友好的错误提示信息。
 export async function openAIWithStreamGpts(
   input: string,
   openAiOptions: OpenAIOptions,
@@ -935,49 +940,63 @@ export async function openAIWithStreamGpts(
 
     const response = await backOff(
       () =>
-        fetch(`${options.completionEndpoint}/chat/completions`, {    // 内嵌了gpts（为model）的body体，只请求/chat/completions格式
+        fetch(`${options.completionEndpoint}/chat/completions`, {
           method: "POST",
-          body: JSON.stringify(body),// 此处有内嵌的 model: options.gpts
+          body: JSON.stringify(body), // 此处有内嵌的 model: options.gpts
           headers: {
             Authorization: `Bearer ${options.apiKey}`,
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream',
-            'User-Agent': 'Apifox/1.0.0 (https://apifox.com)', //单独增加
+            'User-Agent': 'Apifox/1.0.0 (https://apifox.com)', // 单独增加
           },
-          redirect: 'follow'//单独增加
+          redirect: 'follow' // 单独增加
         }).then(async (response) => {
           if (response.ok && response.body) {
             const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
             let result = "";
 
-            const readStream = (): any =>
-              reader.read().then(({ value, done }) => {
-                if (done) {
-                  reader.cancel();
-                  onStop();
-                  return Promise.resolve({ choices: [{ message: { content: result } }] });
-                }
+            const readStream = async (): Promise<any> => {
+              const { value, done } = await reader.read(); // 读取流中的下一个值
+              if (done) {
+                reader.cancel(); // 如果流结束，取消读取器
+                onStop(); // 调用停止回调
+                return Promise.resolve({ choices: [{ message: { content: result } }] }); // 返回最终结果
+              }
 
-                const data = getDataFromStreamValue(value);
-                if (!data || !data[0]) {
-                  return readStream();
+              if (value !== null && value !== undefined) { // 检查值是否为 null 或 undefined
+                const data = getDataFromStreamValue(value); // 解析流数据
+                if (data && data[0]) { // 检查解析的数据是否有效
+                  let res = "";
+                  for (let i = 0; i < data.length; i++) {
+                    res += data[i].choices[0]?.delta?.content || ""; // 将解析的数据累加到结果中
+                  }
+                  result += res; // 更新最终结果
+                  onContent(res); // 调用内容回调
                 }
+              }
 
-                let res = "";
-                for (let i = 0; i < data.length; i++) {
-                  res += data[i].choices[0]?.delta?.content || "";
-                }
-                result += res;
-                onContent(res);
-                return readStream();
-              });
+              // 设置超时机制
+              const timeoutId = setTimeout(() => {
+                reader.cancel(); // 如果超时，取消读取器
+                onStop(); // 调用停止回调
+                console.error("流超时"); // 打印错误信息
+                throw new Error("流超时"); // 抛出超时错误
+              }, 30000);
 
-            return readStream();
+              const promise = readStream(); // 递归调用读取流
+              promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
+              return promise;
+            };
+
+            return readStream().catch(error => {
+              console.error("读取流时发生错误:", error); // 打印读取流时的错误信息
+              throw error;
+            });
           } else if (response.status === 429) {
-            console.warn("Rate limit exceeded. Retrying...");
+            console.warn("Rate limit exceeded. Retrying..."); // 速率限制警告
             throw new Error("Rate limit exceeded.");
           } else {
-            throw new Error(`API request failed with status ${response.status}`);
+            throw new Error(`API request failed with status ${response.status}`); // API 请求失败错误
           }
         }),
       retryOptions
@@ -992,15 +1011,16 @@ export async function openAIWithStreamGpts(
 
     return null;
   } catch (e: any) {
-    console.error("Error in openAIWithStreamGpts:", e);
-    if (e?.response?.data?.error) {
-      console.error(e?.response?.data?.error);
-      throw new Error(e?.response?.data?.error?.message);
-    } else {
-      throw e;
+    // 统一错误提示
+    const errorMessage = "抱歉，网络略有不畅导致系统超时，请稍后重试";
+    console.error(errorMessage);
+    const errorMessageElement = document.getElementById('error-message');
+    if (errorMessageElement) {
+      errorMessageElement.textContent = errorMessage;
     }
+    throw new Error(errorMessage);
   } finally {
-    onStop();
+    onStop(); // 确保在任何情况下都调用 onStop 回调
   }
 }
 

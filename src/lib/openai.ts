@@ -819,9 +819,7 @@ export async function openAI(
   }
 
 
-
-
-// 该版拼接正确，但不断有浮窗产生
+// 该版拼接正确，但不断有浮窗产生 
       /* export async function openAIWithStreamGpts(
         input: string,
         openAiOptions: OpenAIOptions,
@@ -904,10 +902,11 @@ export async function openAI(
           onStop();
         }
       } */
+        
+// 终局函数2:runGptBlock中的openAIWithStreamGpts的机器注释+异常分类处理的定稿版（10.26号上午定稿，含10种异常分类处理场景）；共进行了30-40次左右测试,很少出错！！！
+// （10.26号下午）特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")两种额外的异常处理方式;
 
-// 终局函数2:runGptBlock中的openAIWithStreamGpts的机器注释+异常分类处理的定稿版（10.26号定稿，含10种异常分类处理的场景）；总共进行了30-40次左右测试,很少出错！！！
-
-// 1.异步处理：使用 async/await 语法，使代码更简洁、易读。
+// 1.异步处理：使用 async/await 语法，使代码更简洁、易读。   
 // 2.空值检查：增加了对 value 是否为 null 或 undefined 的检查，避免因空值导致的运行时错误。
 // 3.超时机制：增加了超时机制，防止长时间挂起，提高系统的健壮性和用户体验。
 // 4.统一错误提示：无论错误的具体原因是什么，都提供一个统一的用户友好的错误提示信息。
@@ -1027,14 +1026,13 @@ export async function openAIWithStreamGpts(
 
     return null;
   } catch (e: any) {
-    // 统一错误提示
-    const errorMessage = "抱歉，网络略有不畅导致系统超时，请稍后重试";
-    console.error(errorMessage);
-    const errorMessageElement = document.getElementById('error-message');
+    const errorMessage = e.name === 'AbortError' ? "网络请求超时" : e.message;//既照顾了 e.name === 'AbortError' 的特定错误设定，又保留了原始错误信息 e.message，能够根据不同的错误类型精确处理不同的错误信息。
+    console.error(errorMessage); // 打印错误信息到控制台
+    const errorMessageElement = document.getElementById('error-message'); // 获取错误消息元素
     if (errorMessageElement) {
-      errorMessageElement.textContent = errorMessage;
+      errorMessageElement.textContent = errorMessage; // 更新错误消息元素的文本内容
     }
-    throw new Error(errorMessage);
+    throw new Error(errorMessage); // 抛出错误，以便上层处理
   } finally {
     onStop(); // 确保在任何情况下都调用 onStop 回调
   }

@@ -175,6 +175,12 @@ const LogseqApp = () => {
   const commandsConfig = [
     { commandName: "writingForMe", gptsID: "gpt-4-gizmo-g-B3hgivKK9" },
     { commandName: "marketing insights and analysis", gptsID: "gpt-4-gizmo-g-O5mNWQGMa" }, 
+    { commandName: "dall-e", gptsID: "gpt-4-gizmo-g-2fkFE8rbu" },
+    { commandName: "彩色连环画", gptsID: "gpt-4-gizmo-g-DerYxX7rA" },       //coloring-book-hero
+    { commandName: "小红书爆款", gptsID: "gpt-4-gizmo-g-bhOvRzYzI" },   //bao-kuan-xiao-hong-shu
+    { commandName: "image-generator-pro", gptsID: "gpt-4-gizmo-g-8m2CPAfeF" },
+    { commandName: "抖音短视频创作", gptsID: "gpt-4-gizmo-g-87zN9yfMy" }, //dou-yin-duan-shi-pin-chuang-zuo-short-video-creation
+    { commandName: "营销-品牌推广-广告文案撰稿人", gptsID: "gpt-4-gizmo-g-Ji2QOyMml" },//copywriter-gpt-marketing-branding-ads
   ];
  function createRunGptsIDCommand(gptsID: string) {
     return (b: IHookEvent) => runGptsID(b, gptsID); // 明确指定 b 的类型为 IHookEvent

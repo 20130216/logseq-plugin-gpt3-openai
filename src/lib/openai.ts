@@ -925,7 +925,7 @@ export async function openAIWithStreamGpts(
   try {
     const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
     // console.log("openAIWithStreamGpts重要测试:input:", input); //单独新增代码（测试用） 打印读取的“user命令”
-    // console.log("重要测试gptsID:", openAiOptions.gpts); // 单独新增代码（测试用） 打印 gptsID 
+    // console.log("重要测试gptsID:", openAiOptions.gpts); // 单独新增代码（测试用） 打印 gptsID  
     if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
       inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
     }

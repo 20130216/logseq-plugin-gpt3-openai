@@ -65,7 +65,8 @@ const LogseqApp = () => {
   const [builtInCommands, setBuiltInCommands] = useState<Command[]>([]);
   const [userCommands, setUserCommands] = useState<Command[]>([]);
   const [appState, updateAppState] = useImmer<AppState>(defaultAppState);
-
+  
+  // 打开 UI
   const openUI = async () => {
     const reloadedUserCommands = await loadUserCommands();
     setUserCommands(reloadedUserCommands);
@@ -74,7 +75,7 @@ const LogseqApp = () => {
       document.getElementById("logseq-openai-search")?.focus();
     }, 100);
   };
-
+  // 加载内置命令
   React.useEffect(() => {
     const doLoadBuiltInCommands = async () => {
       const loadedBuiltInCommands = await loadBuiltInCommands();
@@ -83,7 +84,7 @@ const LogseqApp = () => {
 
     doLoadBuiltInCommands();
   }, []);
-
+  // 加载用户命令
   React.useEffect(() => {
     const doLoadUserCommands = async () => {
       const loadedUserCommands = await loadUserCommands();
@@ -91,7 +92,7 @@ const LogseqApp = () => {
     };
     doLoadUserCommands();
   }, []);
-
+  // 注册快捷键
   React.useEffect(() => {
     if (logseq.settings!["popupShortcut"]) {
     logseq.App.registerCommandShortcut(
@@ -159,6 +160,7 @@ const LogseqApp = () => {
         openUI();
       }
     });
+    // 注册上下文菜单项和斜杠命令
     logseq.Editor.registerSlashCommand("gpt-page", runGptPage);
     logseq.Editor.registerBlockContextMenuItem("gpt-page", runGptPage);
     logseq.Editor.registerSlashCommand("gpt-block", runGptBlock);
@@ -182,6 +184,7 @@ const LogseqApp = () => {
     { commandName: "抖音短视频创作", gptsID: "gpt-4-gizmo-g-87zN9yfMy" }, //dou-yin-duan-shi-pin-chuang-zuo-short-video-creation
     { commandName: "营销-品牌推广-广告文案撰稿人", gptsID: "gpt-4-gizmo-g-Ji2QOyMml" },//copywriter-gpt-marketing-branding-ads
   ];
+  // 只有在用户通过：“斜杠命令“或”上下文菜单注册命令“时才会被调用，并处理相应的逻辑 
  function createRunGptsIDCommand(gptsID: string) {
     return (b: IHookEvent) => runGptsID(b, gptsID); // 明确指定 b 的类型为 IHookEvent
   } 
@@ -212,9 +215,9 @@ const LogseqApp = () => {
     }
   }, []);
 
-
+  // 合并命令
   const allCommands = [...builtInCommands, ...userCommands];
-
+  // 处理命令
   const handleCommand = async (command: Command, onContent: (content: string) => void): Promise<string> => {
     let inputText;
     if (appState.selection.type === "singleBlockSelected") {
@@ -230,15 +233,37 @@ const LogseqApp = () => {
     if (command.temperature!=null && !Number.isNaN(command.temperature)) {
       openAISettings.temperature = command.temperature;
     }
+
+/* 
+    console.log("handleCommand called with command:", command); // 添加调试信息
+    // 检查 command 和 command.prompt 是否已定义
+    if (!command) {
+      console.error("command is not defined");
+      return "";
+    }
+    if (!command.prompt) {
+      console.error("command.prompt is not defined");
+      return "";
+    }
+
+    // Set temperature of command instead of global temperature
+    if (command.temperature != null && !Number.isNaN(command.temperature)) {
+      openAISettings.temperature = command.temperature;
+    }
+
+    // 打印 command.prompt 的值  */
+    console.log("重要测试command.prompt:", command.prompt); 
+
     const response = await openAIWithStream(command.prompt + inputText, openAISettings, onContent, () => {
     });
     if (response) {
+      console.log("重要测试command.prompt:", command.prompt+inputText);
       return response;
     } else {
       throw new Error("No OpenAI results.");
     }
   };
-
+  // 插入内容
   const onInsert = async (text: string) => {
     let result = text;
     if (getOpenaiSettings().injectPrefix) {
@@ -268,7 +293,7 @@ const LogseqApp = () => {
 
     logseq.hideMainUI({ restoreEditingCursor: true });
   };
-
+  // 替换内容
   const onReplace = async (text: string) => {
     let result = text;
     if (getOpenaiSettings().injectPrefix) {
@@ -296,11 +321,11 @@ const LogseqApp = () => {
 
     logseq.hideMainUI({ restoreEditingCursor: true });
   };
-
+  // 关闭 UI
   const onClose = () => {
     logseq.hideMainUI({ restoreEditingCursor: true });
   };
-
+  // 渲染 LogseqAI 组件
   return (
     <LogseqAI
       commands={allCommands}

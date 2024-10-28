@@ -26,7 +26,7 @@ export interface OpenAIOptions {
 
 const OpenAIDefaults = (apiKey: string): OpenAIOptions => ({
   apiKey,
-  completionEngine: "gpt-3.5-turbo",
+  completionEngine: "gpt-4o-mini",
   temperature: 1.0,
   maxTokens: 1000,
   dalleImageSize: '1024',
@@ -631,6 +631,7 @@ export async function openAI(
     try {
       if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4") || engine.startsWith("gpt-4o")) {
         const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
+        // console.log("openAIWithStream重要测试:input:", input); //单独新增代码（测试用） 打印读取的“user命令”
         if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
           inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
         }
@@ -772,7 +773,9 @@ export async function openAI(
               if (data && data[0]) { // 检查解析的数据是否有效
                 let res = "";
                 for (let i = 0; i < data.length; i++) {
-                  res += data[i].choices[0]?.text || ""; // 将解析的数据累加到结果中
+                  if (data[i]) { //新增代码：安全性：通过 if (data[i]) 判断，确保 data[i] 不是 undefined 或 null，从而避免不必要的字符串拼接操作。
+                    res += data[i].choices[0]?.delta?.content || "";// 将解析的数据累加到结果中
+                  }
                 }
                 result += res; // 更新最终结果
                 onContent(res); // 调用内容回调
@@ -921,6 +924,8 @@ export async function openAIWithStreamGpts(
 
   try {
     const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
+    // console.log("openAIWithStreamGpts重要测试:input:", input); //单独新增代码（测试用） 打印读取的“user命令”
+    // console.log("重要测试gptsID:", openAiOptions.gpts); // 单独新增代码（测试用） 打印 gptsID
     if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
       inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
     }
@@ -986,7 +991,9 @@ export async function openAIWithStreamGpts(
               if (data && data[0]) { // 检查解析的数据是否有效
                 let res = "";
                 for (let i = 0; i < data.length; i++) {
-                  res += data[i].choices[0]?.delta?.content || ""; // 将解析的数据累加到结果中
+                  if (data[i]) { //新增代码：安全性：通过 if (data[i]) 判断，确保 data[i] 不是 undefined 或 null，从而避免不必要的字符串拼接操作。
+                    res += data[i].choices[0]?.delta?.content || "";// 将解析的数据累加到结果中
+                  }
                 }
                 result += res; // 更新最终结果
                 onContent(res); // 调用内容回调

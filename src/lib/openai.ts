@@ -654,7 +654,7 @@ export async function openAI(
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream'
           },
-          signal: AbortSignal.timeout(60000) // 设置请求超时
+          signal: AbortSignal.timeout(120000) // 设置请求超时
         });
   
         if (!response.ok) {
@@ -703,7 +703,7 @@ export async function openAI(
               onStop(); // 调用停止回调
               console.error("输出数据流超时"); // 打印错误信息
               throw new Error("输出数据流超时"); // 抛出超时错误
-            }, 60000);
+            }, 120000);
   
             const promise = readStream(); // 递归调用读取流
             promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
@@ -737,7 +737,7 @@ export async function openAI(
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream'
           },
-          signal: AbortSignal.timeout(60000) // 设置请求超时
+          signal: AbortSignal.timeout(120000) // 设置请求超时
         });
   
         if (!response.ok) {
@@ -788,7 +788,7 @@ export async function openAI(
               onStop(); // 调用停止回调
               console.error("输出数据流超时"); // 打印错误信息
               throw new Error("输出数据流超时"); // 抛出超时错误
-            }, 60000);
+            }, 120000);
   
             const promise = readStream(); // 递归调用读取流
             promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
@@ -952,7 +952,7 @@ export async function openAIWithStreamGpts(
             'Accept': 'text/event-stream',
             'User-Agent': 'Apifox/1.0.0 (https://apifox.com)', // 单独增加
           },
-          signal: AbortSignal.timeout(60000), // 设置请求超时
+          signal: AbortSignal.timeout(120000), // 设置请求超时
           redirect: 'follow' // 单独增加
         });
 
@@ -1006,7 +1006,7 @@ export async function openAIWithStreamGpts(
               onStop(); // 调用停止回调
               console.error("流超时"); // 打印错误信息
               throw new Error("流超时"); // 抛出超时错误
-            }, 60000);
+            }, 120000);
 
             const promise = readStream(); // 递归调用读取流
             promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器

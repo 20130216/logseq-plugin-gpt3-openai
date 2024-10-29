@@ -342,7 +342,7 @@ export async function runGptPage(b: IHookEvent) {
   } */
 
 // 升级1-2-1-1-1-push7/9-1-push12/12
-export async function runGptsID(b: IHookEvent, gptsID: string) {
+export async function runGptsID(b: IHookEvent, gptsID: string, commandName: string) {
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);
 
@@ -364,8 +364,11 @@ export async function runGptsID(b: IHookEvent, gptsID: string) {
       sibling: false,
     });
 
+    const newPrefix = `OpenAI GPTs：${commandName}\n`; // 新增：构建新的前缀
     if (openAISettings.injectPrefix && result.length === 0) {
-      result = openAISettings.injectPrefix + result;
+      result = openAISettings.injectPrefix + newPrefix; // 修改：将新前缀加入到现有前缀之后
+    } else {
+      result = newPrefix; // 如果没有现有前缀，直接使用新前缀
     }
 
     await openAIWithStreamGpts(currentBlock.content, { ...openAISettings, gpts: gptsID }, async (content: string) => {

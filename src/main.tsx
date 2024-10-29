@@ -243,13 +243,13 @@ const LogseqApp = () => {
     //DALL·E达尔·E  让我把你的想象力变成图像
     //dall-e类别 Other， 2024.10.28
     { 
-      commandName: "dall-e（openAi官方推荐：image图像生成）", 
+      commandName: "dall-e（OpenAI官方推荐：image图像生成）", 
       gptsID: "gpt-4-gizmo-g-2fkFE8rbu" 
     },
     //Coloring Book Hero图画书英雄 把任何想法变成异想天开的图画书页。
     //coloring-book-hero  
     { 
-      commandName: "彩色连环画（openAi官方力荐：连环image图像生成）", 
+      commandName: "彩色连环画（OpenAI官方力荐：连环image图像生成）", 
       gptsID: "gpt-4-gizmo-g-DerYxX7rA" 
     },      
 
@@ -518,49 +518,49 @@ const LogseqApp = () => {
 
   ]
 
-  function createRunGptsIDCommand(gptsID: string) {
-    return (b: IHookEvent) => runGptsID(b, gptsID); // 明确指定 b 的类型为 IHookEvent
+  function createRunGptsIDCommand(gptsID: string, commandName: string) {
+    return (b: IHookEvent) => runGptsID(b, gptsID, commandName); // 修改：添加 commandName 参数
   }
   
- // 检查列表是否以分隔符开始
-if (commandsConfig[0] && typeof commandsConfig[0] === 'string' && commandsConfig[0].startsWith("// 注册分隔符")) {
-  logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
-}
-
-let insertSeparator = false;
-
-commandsConfig.forEach((item, index, array) => {
-  if (typeof item === 'string' && item.startsWith("// 注册分隔符")) {
-    // 当前项是分隔符
-    if (index > 0 && typeof array[index - 1] === 'object') {
-      // 前一项是命令，则在此处注册分隔符
-      logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
-    }
-    // 标记下一项需要注册
-    insertSeparator = true;
-  } else if (insertSeparator) {
-    // 分隔符后跟随的是命令
-    if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
-      logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID));
-      logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID));
-    }
-    insertSeparator = false;
-  } else {
-    // 正常注册命令
-    if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
-      logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID));
-      logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID));
-    }
+  // 检查列表是否以分隔符开始
+  if (commandsConfig[0] && typeof commandsConfig[0] === 'string' && commandsConfig[0].startsWith("// 注册分隔符")) {
+    logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
   }
-
-  // 防止在列表末尾添加多余的分隔符
-  if (index === array.length - 1 && insertSeparator) {
-    // 如果最后一项是分隔符标记，但不是实际的分隔符字符串，就不需要再添加分隔符了
-    if (typeof item !== 'string' || !item.startsWith("// 注册分隔符")) {
-      logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
+  
+  let insertSeparator = false;
+  
+  commandsConfig.forEach((item, index, array) => {
+    if (typeof item === 'string' && item.startsWith("// 注册分隔符")) {
+      // 当前项是分隔符
+      if (index > 0 && typeof array[index - 1] === 'object') {
+        // 前一项是命令，则在此处注册分隔符
+        logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
+      }
+      // 标记下一项需要注册   “”
+      insertSeparator = true;
+    } else if (insertSeparator) {
+      // 分隔符后跟随的是命令
+      if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
+        logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName)); // 修改：添加 commandName 参数
+        logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName)); // 修改：添加 commandName 参数
+      }
+      insertSeparator = false;
+    } else {
+      // 正常注册命令
+      if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
+        logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName)); // 修改：添加 commandName 参数
+        logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName)); // 修改：添加 commandName 参数
+      }
     }
-  }
-});
+  
+    // 防止在列表末尾添加多余的分隔符
+    if (index === array.length - 1 && insertSeparator) {
+      // 如果最后一项是分隔符标记，但不是实际的分隔符字符串，就不需要再添加分隔符了
+      if (typeof item !== 'string' || !item.startsWith("// 注册分隔符")) {
+        logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
+      }
+    }
+  });
   
 // 备用函数：如果需要动态修改 gptsID，可以重新注册命令 
 /* function updateCommandGptsID(commandName: string, newGptsID: string) {

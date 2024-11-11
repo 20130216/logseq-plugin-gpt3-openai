@@ -1,0 +1,11 @@
+[continue]
+name = "Continue-test"
+description = "Continue writing"
+prompt = ''
+
+[summarize-text]
+name = "Summarize Text-test"
+description = "Summarize a text document"
+prompt = '''
+Summarize text:
+'''

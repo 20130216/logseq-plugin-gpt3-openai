@@ -2,50 +2,7 @@ import { IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { getAudioFile, getPageContentFromBlock, getImageUrlFromBlock,saveDalleImage } from "./logseq";
 import { OpenAIOptions, dallE, whisper, openAIWithStream, readImageURL, readLocalImageURL, openAIWithStreamGpts } from "./openai";
 import { getOpenaiSettings } from "./settings";
-
-/* function handleOpenAIError(e: any) {
-  if (
-    !e.response ||
-    !e.response.status ||
-    !e.response.data ||
-    !e.response.data.error
-  ) {
-    console.error(`Unknown OpenAI error: ${e}`);
-    // logseq.App.showMsg("Unknown OpenAI Error", "error");
-    logseq.App.showMsg("抱歉，网络略有不畅导致系统超时，请稍后重试", "error"); // 替换为中文消息
-    return;
-  }
-
-  const httpStatus = e.response.status;
-  const errorCode = e.response.data.error.code;
-  const errorMessage = e.response.data.error.message;
-  const errorType = e.response.data.error.type;
-
-  if (httpStatus === 401) {
-    console.error("OpenAI API key is invalid.");
-    // logseq.App.showMsg("Invalid OpenAI API Key.", "error");
-    logseq.App.showMsg("无效的 OpenAI API 密钥", "error"); // 替换为中文消息
-  } else if (httpStatus === 429) {
-    if (errorType === "insufficient_quota") {
-      console.error(
-        "Exceeded OpenAI API quota. Or your trial is over. You can buy more at https://beta.openai.com/account/billing/overview"
-      );
-      // logseq.App.showMsg("OpenAI Quota Reached", "error");
-      logseq.App.showMsg("OpenAI 配额已用完", "error"); // 替换为中文消息
-    } else {
-      console.warn(
-        "OpenAI API rate limit exceeded. Try slowing down your requests."
-      );
-      // logseq.App.showMsg("OpenAI Rate Limited", "warning");
-      logseq.App.showMsg("OpenAI 请求频率过高", "warning"); // 替换为中文消息
-    }
-  } else {
-    // logseq.App.showMsg("OpenAI Plugin Error", "error");
-    logseq.App.showMsg("OpenAI 插件错误", "error"); // 替换为中文消息
-  }
-  console.error(`OpenAI error: ${errorType} ${errorCode}  ${errorMessage}`);
-} */
-
+import { Command } from "../ui/LogseqAI";
 
   // 10种应用场景的分门别类处理：所有异常最终都会被 runGptBlock 捕获并传递给 handleOpenAIError 函数来处理，那么你只需要在 handleOpenAIError 中分门别类地处理各种异常情况即可。这样可以确保所有的异常处理逻辑集中在一个地方，便于维护和管理。  
   // 10.26号上午定稿 下午又特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")两种额外的异常处理方式;
@@ -341,8 +298,9 @@ export async function runGptPage(b: IHookEvent) {
     }
   } */
 
-// 升级1-2-1-1-1-push7/9-1-push12/12
+
 export async function runGptsID(b: IHookEvent, gptsID: string, commandName: string) {
+  // 获取用户在设置窗口中自定义的值；此前在main.tsx中已经通过logseq.useSettingsSchema(settingsSchema);进行了插件初始化时的默认设置
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);
 
@@ -370,7 +328,7 @@ export async function runGptsID(b: IHookEvent, gptsID: string, commandName: stri
     } else {
       result = newPrefix; // 如果没有现有前缀，直接使用新前缀
     }
-
+    // gpts: gptsID 会覆盖 openAISettings 中同名的属性。
     await openAIWithStreamGpts(currentBlock.content, { ...openAISettings, gpts: gptsID }, async (content: string) => {
       result += content || "";
       if (insertBlock) {
@@ -387,6 +345,68 @@ export async function runGptsID(b: IHookEvent, gptsID: string, commandName: stri
     handleOpenAIError(e);
   }
 }
+
+
+// 新增：创建运行 prompts-gpts.toml 命令的处理函数
+export async function createRunGptsTomlCommand(command: Command) {
+  return async (b: IHookEvent) => {
+    const openAISettings = getOpenaiSettings();
+    validateSettings(openAISettings);
+
+    const currentBlock = await logseq.Editor.getBlock(b.uuid);
+    if (!currentBlock) {
+      console.error("No current block");
+      return;
+    }
+
+    if (currentBlock.content.trim().length === 0) {
+      logseq.App.showMsg("Empty Content", "warning");
+      console.warn("Blank page");
+      return;
+    }
+
+    try {
+      let result = "";
+      const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
+        sibling: false,
+      });
+
+      const newPrefix = `${command.name}\n`; // 构建新的前缀
+      if (openAISettings.injectPrefix && result.length === 0) {
+        result = openAISettings.injectPrefix + newPrefix; // 将新前缀加入到现有前缀之后
+      } else {
+        result = newPrefix; // 如果没有现有前缀，直接使用新前缀
+      }
+
+      // 调用 openAIWithStream 进行处理
+      const finalPrompt = command.prompt + currentBlock.content;
+      const streamResult = await openAIWithStream(finalPrompt, openAISettings, async (content: string) => {
+        result += content || "";
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+      }, () => {});
+
+      if (streamResult) {
+        result += streamResult;
+      }
+
+      if (!result) {
+        logseq.App.showMsg("No OpenAI content", "warning");
+        return;
+      }
+    } catch (e: any) {
+      console.error("Error in runGptsCommand:", e);
+      handleOpenAIError(e);
+    }
+  };
+}
+
+
+
+
+
+
 
 
 export async function runDalleBlock(b: IHookEvent) {

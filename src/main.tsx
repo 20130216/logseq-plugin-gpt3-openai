@@ -4,9 +4,9 @@ import { openAIWithStream } from "./lib/openai";
 import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
 import { Command, LogseqAI } from "./ui/LogseqAI";
-import { loadUserCommands, loadBuiltInCommands } from "./lib/prompts";
+import { loadUserCommands, loadBuiltInCommands,loadBuiltInGptsTomlCommands } from "./lib/prompts";
 import { getOpenaiSettings, settingsSchema } from "./lib/settings";
-import { runDalleBlock, runGptBlock, runGptPage, runGptsID, runReadImageURL, runWhisper } from "./lib/rawCommands";
+import { createRunGptsTomlCommand, runDalleBlock, runGptBlock, runGptPage, runGptsID, runReadImageURL, runWhisper } from "./lib/rawCommands";
 import { BlockEntity, IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { useImmer } from 'use-immer';
 
@@ -63,6 +63,7 @@ const defaultAppState: AppState = {
 const LogseqApp = () => {
 
   const [builtInCommands, setBuiltInCommands] = useState<Command[]>([]);
+  const [builtInGptsTomlCommands, setBuiltInGptsTomlCommands] = useState<Command[]>([]);//新增
   const [userCommands, setUserCommands] = useState<Command[]>([]);
   const [appState, updateAppState] = useImmer<AppState>(defaultAppState);
   
@@ -84,6 +85,8 @@ const LogseqApp = () => {
 
     doLoadBuiltInCommands();
   }, []);
+
+
   // 加载用户命令
   React.useEffect(() => {
     const doLoadUserCommands = async () => {
@@ -92,7 +95,33 @@ const LogseqApp = () => {
     };
     doLoadUserCommands();
   }, []);
-  // 注册快捷键
+
+  // 新增代码：加载内置的 prompts-gpts.toml 文件中的命令；
+  // 将加载的命令列表通过 setBuiltInGptsTomlCommands 设置到状态变量 builtInGptsTomlCommands 中。
+  React.useEffect(() => {
+    const doLoadBuiltInGptsTomlCommands = async () => {
+      const loadedBuiltInGptsTomlCommands = await loadBuiltInGptsTomlCommands();
+      setBuiltInGptsTomlCommands(loadedBuiltInGptsTomlCommands);
+    };
+
+    doLoadBuiltInGptsTomlCommands();
+  }, []);
+
+  // 新增代码：注册“斜杠命令”和“块上下文菜单项”；在 builtInGptsTomlCommands 状态变量发生变化时执行。
+  React.useEffect(() => {
+    const doRegisterGptsTomlCommands = async () => {
+      if (builtInGptsTomlCommands.length > 0) {
+        builtInGptsTomlCommands.forEach(async (command) => {
+          logseq.Editor.registerSlashCommand(command.name, await createRunGptsTomlCommand(command));
+          logseq.Editor.registerBlockContextMenuItem(command.name, await createRunGptsTomlCommand(command));
+        });
+      }
+    };
+
+    doRegisterGptsTomlCommands();
+  }, [builtInGptsTomlCommands]);
+  
+  // 处理快捷键
   React.useEffect(() => {
     if (logseq.settings!["popupShortcut"]) {
     logseq.App.registerCommandShortcut(
@@ -133,7 +162,8 @@ const LogseqApp = () => {
     );
     }
   }, []);
-
+  
+  // 处理"gpt-page""gpt-block""whisper"+处理commandsConfig[...]；
   React.useEffect(() => {
     logseq.Editor.registerBlockContextMenuItem("gpt", async (b) => {
       const block = await logseq.Editor.getBlock(b.uuid);
@@ -536,7 +566,7 @@ const LogseqApp = () => {
         // 前一项是命令，则在此处注册分隔符
         logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
       }
-      // 标记下一项需要注册   “”
+      // 标记下一项需要注册
       insertSeparator = true;
     } else if (insertSeparator) {
       // 分隔符后跟随的是命令
@@ -583,8 +613,10 @@ const LogseqApp = () => {
     }
   }, []);
 
+  
+
   // 合并命令
-  const allCommands = [...builtInCommands, ...userCommands];
+  const allCommands = [...builtInCommands,...builtInGptsTomlCommands,...userCommands]; //新增...builtInGptsTomlCommands
   // 处理命令
   const handleCommand = async (command: Command, onContent: (content: string) => void): Promise<string> => {
     let inputText;
@@ -683,3 +715,6 @@ const LogseqApp = () => {
     />
   );
 };
+
+
+

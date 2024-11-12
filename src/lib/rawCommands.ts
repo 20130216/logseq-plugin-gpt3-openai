@@ -6,7 +6,7 @@ import { Command } from "../ui/LogseqAI";
 
   // 10种应用场景的分门别类处理：所有异常最终都会被 runGptBlock 捕获并传递给 handleOpenAIError 函数来处理，那么你只需要在 handleOpenAIError 中分门别类地处理各种异常情况即可。这样可以确保所有的异常处理逻辑集中在一个地方，便于维护和管理。  
   // 10.26号上午定稿 下午又特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")两种额外的异常处理方式;
-  function handleOpenAIError(e: any) {
+  export function handleOpenAIError(e: any) {
     if (
       !e.response ||
       !e.response.status ||
@@ -401,12 +401,6 @@ export async function createRunGptsTomlCommand(command: Command) {
     }
   };
 }
-
-
-
-
-
-
 
 
 export async function runDalleBlock(b: IHookEvent) {

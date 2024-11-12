@@ -6,7 +6,7 @@ import ReactDOM from "react-dom/client";
 import { Command, LogseqAI } from "./ui/LogseqAI";
 import { loadUserCommands, loadBuiltInCommands, loadBuiltInGptsTomlCommands } from "./lib/prompts";
 import { getOpenaiSettings, settingsSchema } from "./lib/settings";
-import { createRunGptsTomlCommand, runDalleBlock, runGptBlock, runGptPage, runGptsID, runReadImageURL, runWhisper } from "./lib/rawCommands";
+import { createRunGptsTomlCommand, handleOpenAIError, runDalleBlock, runGptBlock, runGptPage, runGptsID, runWhisper } from "./lib/rawCommands";
 import { BlockEntity, IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { useImmer } from 'use-immer';
 
@@ -84,7 +84,7 @@ const LogseqApp = () => {
     loadUserCommandsAsync();
   }, []);
 
-  // 加载内置的 prompts-gpts.toml 文件中的命令
+  // 加载内置在 prompts-gpts.toml 文件中的命令
   useEffect(() => {
     const loadBuiltInGptsTomlCommandsAsync = async () => {
       const loadedBuiltInGptsTomlCommands = await loadBuiltInGptsTomlCommands();
@@ -93,7 +93,7 @@ const LogseqApp = () => {
     loadBuiltInGptsTomlCommandsAsync();
   }, []);
 
-  // 把内置的 prompts-gpts.toml 文件中的命令转化为commands数组后，注册成 “斜杠和菜单栏”命令
+  // 把内置在 prompts-gpts.toml 文件中的命令转化为commands数组后，注册成 “斜杠和菜单栏”命令
   useEffect(() => {
     const registerGptsTomlCommands = async () => {
       if (builtInGptsTomlCommands.length > 0) {
@@ -147,47 +147,51 @@ const LogseqApp = () => {
     }
   }, []);
 
-  // 注册 gpt 相关命令 
-  useEffect(() => {
-    const registerGptCommands = async () => {
-      logseq.Editor.registerBlockContextMenuItem("gpt", async (b) => {
-        const block = await logseq.Editor.getBlock(b.uuid);
-        if (block) {
-          updateAppState(draft => {
-            draft.selection = {
-              type: "singleBlockSelected",
-              block: block,
-            };
-          });
-          openUI();
-        }
-      });
+  // 注册 gpt 相关命令
+  React.useEffect(() => {
+    logseq.Editor.registerBlockContextMenuItem("gpt", async (b) => {
+      const block = await logseq.Editor.getBlock(b.uuid);
+      if (block) {
+        updateAppState(draft => {
+          draft.selection = {
+            type: "singleBlockSelected",
+            block: block,
+          };
+        });
+        openUI();
+      }
+    });
 
-      logseq.Editor.registerSlashCommand("gpt", async (b) => {
-        const block = await logseq.Editor.getBlock(b.uuid);
-        if (block) {
-          updateAppState(draft => {
-            draft.selection = {
-              type: "singleBlockSelected",
-              block: block,
-            };
-          });
-          openUI();
-        }
-      });
+    logseq.Editor.registerSlashCommand("gpt", async (b) => {
+      const block = await logseq.Editor.getBlock(b.uuid);
+      if (block) {
+        updateAppState(draft => {
+          draft.selection = {
+            type: "singleBlockSelected",
+            block: block,
+          };
+        });
+        openUI();
+      } else {
+        // 给用户一个友好的提示
+        logseq.App.showMsg("所选块无效，请选择一个有效的块。", "warning");
+      }
+    });
+    logseq.Editor.registerSlashCommand("gpt-page", runGptPage);
+    logseq.Editor.registerBlockContextMenuItem("gpt-page", runGptPage);
+    logseq.Editor.registerSlashCommand("gpt-block", runGptBlock);
+    logseq.Editor.registerBlockContextMenuItem("gpt-block", runGptBlock);
+    logseq.Editor.registerSlashCommand("dalle", runDalleBlock);
+    logseq.Editor.registerBlockContextMenuItem("dalle", runDalleBlock);
+    logseq.Editor.registerSlashCommand("whisper", runWhisper);
+    logseq.Editor.registerBlockContextMenuItem("whisper", runWhisper);
 
-      logseq.Editor.registerSlashCommand("gpt-page", runGptPage);
-      logseq.Editor.registerBlockContextMenuItem("gpt-page", runGptPage);
-      logseq.Editor.registerSlashCommand("gpt-block", runGptBlock);
-      logseq.Editor.registerBlockContextMenuItem("gpt-block", runGptBlock);
-      logseq.Editor.registerSlashCommand("dalle", runDalleBlock);
-      logseq.Editor.registerBlockContextMenuItem("dalle", runDalleBlock);
-      logseq.Editor.registerSlashCommand("whisper", runWhisper);
-      logseq.Editor.registerBlockContextMenuItem("whisper", runWhisper);
-      logseq.Editor.registerSlashCommand("read-image-URL", runReadImageURL);
-      logseq.Editor.registerBlockContextMenuItem("read-image-URL", runReadImageURL);
-    };
-    registerGptCommands();
+    if (logseq.settings!["shortcutBlock"]) {
+      logseq.App.registerCommandShortcut(
+        { "binding": logseq.settings!["shortcutBlock"] },
+        runGptBlock
+      );
+    }
   }, []);
 
   // 注册 gptsID 命令
@@ -537,67 +541,95 @@ const LogseqApp = () => {
 
   ]
 
-      const createRunGptsIDCommand = (gptsID: string, commandName: string) => (b: IHookEvent) => runGptsID(b, gptsID, commandName);
+  const createRunGptsIDCommand = (gptsID: string, commandName: string) => async (b: IHookEvent) => {
+    const block = await logseq.Editor.getBlock(b.uuid);
+    if (block) {
+      updateAppState(draft => {
+        draft.selection = {
+          type: "singleBlockSelected",
+          block: block,
+        };
+      });
+      openUI();
+    } else {
+      // 给用户一个友好的提示
+      logseq.App.showMsg("所选块无效，请选择一个有效的块。", "warning");
+    }
+    // 调用实际的处理函数
+    await runGptsID(b, gptsID, commandName);
+  };
 
-      if (gptsIDCommands[0] && typeof gptsIDCommands[0] === 'string' && gptsIDCommands[0].startsWith("// 注册分隔符")) {
+  if (gptsIDCommands[0] && typeof gptsIDCommands[0] === 'string' && gptsIDCommands[0].startsWith("// 注册分隔符")) {
+    logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
+  }
+
+  let insertSeparator = false;
+
+  gptsIDCommands.forEach((item, index, array) => {
+    if (typeof item === 'string' && item.startsWith("// 注册分隔符")) {
+      if (index > 0 && typeof array[index - 1] === 'object') {
         logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
       }
+      insertSeparator = true;
+    } else if (insertSeparator) {
+      if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
+        logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
+        logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
+      }
+      insertSeparator = false;
+    } else {
+      if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
+        logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
+        logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
+      }
+    }
 
-      let insertSeparator = false;
+    if (index === array.length - 1 && insertSeparator) {
+      if (typeof item !== 'string' || !item.startsWith("// 注册分隔符")) {
+        logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
+      }
+    }
+  });
+};
 
-      gptsIDCommands.forEach((item, index, array) => {
-        if (typeof item === 'string' && item.startsWith("// 注册分隔符")) {
-          if (index > 0 && typeof array[index - 1] === 'object') {
-            logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
-          }
-          insertSeparator = true;
-        } else if (insertSeparator) {
-          if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
-            logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
-            logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
-          }
-          insertSeparator = false;
-        } else {
-          if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
-            logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
-            logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
-          }
-        }
-
-        if (index === array.length - 1 && insertSeparator) {
-          if (typeof item !== 'string' || !item.startsWith("// 注册分隔符")) {
-            logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
-          }
-        }
-      });
-    };
-    registerGptsIDCommands();
-  }, []);
+registerGptsIDCommands();
+}, []);
 
   // 合并所有命令
   const allCommands = [...builtInCommands, ...builtInGptsTomlCommands, ...userCommands];
 
-  // 处理命令
+
   const handleCommand = async (command: Command, onContent: (content: string) => void): Promise<string> => {
-    let inputText;
+    let inputText = "";
+  
+    // 检查选择类型并获取输入文本
     if (appState.selection.type === "singleBlockSelected" && appState.selection.block) {
       inputText = appState.selection.block.content;
     } else if (appState.selection.type === "multipleBlocksSelected" && appState.selection.blocks) {
       inputText = appState.selection.blocks.map(b => b.content).join("\n");
-    } else {
-      inputText = "";
     }
-
+  
+    // 获取 OpenAI 设置
     const openAISettings = getOpenaiSettings();
+  
+    // 设置命令温度
     if (command.temperature != null && !Number.isNaN(command.temperature)) {
       openAISettings.temperature = command.temperature;
     }
-
-    const response = await openAIWithStream(command.prompt + inputText, openAISettings, onContent, () => { });
-    if (response) {
-      return response;
-    } else {
-      throw new Error("No OpenAI results.");
+  
+    // 调用 OpenAI API 并处理响应
+    try {
+      const response = await openAIWithStream(command.prompt + inputText, openAISettings, onContent, () => { });
+  
+      if (response) {
+        return response;
+      } else {
+        throw new Error("No OpenAI results.");
+      }
+    } catch (error) {
+      // 调用专门的错误处理函数
+      handleOpenAIError(error);
+      throw error; // 重新抛出错误，以便调用者可以处理
     }
   };
 
@@ -674,3 +706,5 @@ const LogseqApp = () => {
     />
   );
 };
+
+

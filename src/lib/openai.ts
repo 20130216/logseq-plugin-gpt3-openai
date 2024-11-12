@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import "@logseq/libs";
 import { backOff } from "exponential-backoff";
+import { handleOpenAIError } from "./rawCommands";
 // import {CompletionChoice} from "openai/resources/completions";
 // import { ChatCompletion, ChatCompletionChoice, CompletionChoice, Choice } from '../../../node_modules/.pnpm/openai@4.67.3/node_modules/openai/src/resources/chat/completions';
 
@@ -256,7 +257,7 @@ export async function openAI(
   // 2.空值检查：增加了对 value 的空值检查，避免了可能的 null 或 undefined 错误 
   // 3.超时机制：增加了超时机制，如果流读取超过 30 秒则取消读取器并抛出错误，提高了系统的健壮性。
   // 4.错误处理：提供了统一的用户友好的错误提示，并且可以在 UI 中显示错误信息，提升了用户体验。
-  export async function openAIWithStream(
+export async function openAIWithStream(
     input: string,
     openAiOptions: OpenAIOptions,
     onContent: (content: string) => void,
@@ -295,20 +296,9 @@ export async function openAI(
         });
   
         if (!response.ok) {
-          const errorData = await response.json();
-          if (response.status === 401) {
-            throw new Error("OpenAI API 密钥无效。");
-          } else if (response.status === 429) {
-            throw new Error("超出 OpenAI API 配额。");
-          } else if (response.status === 400) {
-            throw new Error(`请求参数错误: ${errorData.message}`);
-          } else if (response.status === 500) {
-            throw new Error("服务器内部错误。");
-          } else if (response.status === 503) {
-            throw new Error("服务不可用。");
-          } else {
-            throw new Error(`请求失败，状态码: ${response.status}, 错误信息: ${errorData.message}`);
-          }
+          // 调用专门的错误处理函数
+          handleOpenAIError({ response });
+          throw new Error("请求失败，请检查控制台日志。");
         }
   
         if (response.body) {
@@ -378,20 +368,9 @@ export async function openAI(
         });
   
         if (!response.ok) {
-          const errorData = await response.json();
-          if (response.status === 401) {
-            throw new Error("OpenAI API 密钥无效。");
-          } else if (response.status === 429) {
-            throw new Error("超出 OpenAI API 配额。");
-          } else if (response.status === 400) {
-            throw new Error(`请求参数错误: ${errorData.message}`);
-          } else if (response.status === 500) {
-            throw new Error("服务器内部错误。");
-          } else if (response.status === 503) {
-            throw new Error("服务不可用。");
-          } else {
-            throw new Error(`请求失败，状态码: ${response.status}, 错误信息: ${errorData.message}`);
-          }
+            // 调用专门的错误处理函数
+            handleOpenAIError({ response });
+            throw new Error("请求失败，请检查控制台日志。");
         }
   
         if (response.body) {
@@ -512,21 +491,9 @@ export async function openAIWithStreamGpts(
         });
 
         if (!fetchResponse.ok) {
-          const errorData = await fetchResponse.json();
-          if (fetchResponse.status === 401) {
-            throw new Error("OpenAI API 密钥无效。");
-          } else if (fetchResponse.status === 429) {
-            console.warn("Rate limit exceeded. Retrying..."); // 速率限制警告
-            throw new Error("Rate limit exceeded.");
-          } else if (fetchResponse.status === 400) {
-            throw new Error(`请求参数错误: ${errorData.message}`);
-          } else if (fetchResponse.status === 500) {
-            throw new Error("服务器内部错误。");
-          } else if (fetchResponse.status === 503) {
-            throw new Error("服务不可用。");
-          } else {
-            throw new Error(`请求失败，状态码: ${fetchResponse.status}, 错误信息: ${errorData.message}`);
-          }
+          // 调用专门的错误处理函数
+          handleOpenAIError(fetchResponse);
+          throw new Error("请求失败，请检查控制台日志。");
         }
 
         if (fetchResponse.body) {

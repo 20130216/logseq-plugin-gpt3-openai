@@ -143,6 +143,8 @@ export async function dallE(
   return response.data[0].url;
 }
 
+
+
 export async function openAI(
   input: string,
   openAiOptions: OpenAIOptions
@@ -257,7 +259,7 @@ export async function openAI(
   // 2.空值检查：增加了对 value 的空值检查，避免了可能的 null 或 undefined 错误 
   // 3.超时机制：增加了超时机制，如果流读取超过 30 秒则取消读取器并抛出错误，提高了系统的健壮性。
   // 4.错误处理：提供了统一的用户友好的错误提示，并且可以在 UI 中显示错误信息，提升了用户体验。
-export async function openAIWithStream(
+/* export async function openAIWithStream(
     input: string,
     openAiOptions: OpenAIOptions,
     onContent: (content: string) => void,
@@ -356,7 +358,7 @@ export async function openAIWithStream(
           stream: true
         };
   
-        const response = await fetch(`${options.completionEndpoint}/completions`, {
+        const response = await fetch(`${options.completionEndpoint}/chat/completions`, {
           method: "POST",
           body: JSON.stringify(body),
           headers: {
@@ -428,8 +430,104 @@ export async function openAIWithStream(
       }
       throw new Error(errorMessage); // 抛出错误，以便上层处理
     }
-  }
-
+  } */
+    
+    export async function openAIWithStream(
+      input: string,
+      openAiOptions: OpenAIOptions,
+      onContent: (content: string) => void,
+      onStop: () => void
+    ): Promise<string | null> {
+      const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+      const engine = options.completionEngine!;
+    
+      try {
+        const body = {
+          messages: [
+            ...(openAiOptions.chatPrompt ? [{ role: "system", content: openAiOptions.chatPrompt }] : []),
+            { role: "user", content: input }
+          ],
+          temperature: options.temperature,
+          max_tokens: options.maxTokens,
+          top_p: 1,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+          model: engine,
+          stream: true
+        };
+    
+        const response = await fetch(`${options.completionEndpoint}/chat/completions`, {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: {
+            Authorization: `Bearer ${options.apiKey}`,
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream'
+          },
+          signal: AbortSignal.timeout(120000) // 设置请求超时
+        });
+    
+        if (!response.ok) {
+          handleOpenAIError({ response });
+          throw new Error("请求失败，请检查控制台日志。");
+        }
+    
+        if (response.body) {
+          const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+          let result = "";
+    
+          const readStream = async (): Promise<any> => {
+            const { value, done } = await reader.read(); // 读取流中的下一个值
+            if (done) {
+              reader.cancel(); // 如果流结束，取消读取器
+              onStop(); // 调用停止回调
+              return Promise.resolve({ choices: [{ message: { content: result } }] }); // 返回最终结果
+            }
+    
+            if (value !== null && value !== undefined) { // 检查值是否为 null 或 undefined
+              const data = getDataFromStreamValue(value); // 解析流数据
+              if (data && data[0]) { // 检查解析的数据是否有效
+                let res = "";
+                for (let i = 0; i < data.length; i++) {
+                  if (data[i]) { // 新增代码：安全性：通过 if (data[i]) 判断，确保 data[i] 不是 undefined 或 null，从而避免不必要的字符串拼接操作。
+                    res += data[i].choices[0]?.delta?.content || ""; // 将解析的数据累加到结果中
+                  }
+                }
+                result += res; // 更新最终结果
+                onContent(res); // 调用内容回调
+              }
+            }
+    
+            // 设置超时机制
+            const timeoutId = setTimeout(() => {
+              reader.cancel(); // 如果超时，取消读取器
+              onStop(); // 调用停止回调
+              console.error("输出数据流超时"); // 打印错误信息
+              throw new Error("输出数据流超时"); // 抛出超时错误
+            }, 120000);
+    
+            const promise = readStream(); // 递归调用读取流
+            promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
+            return promise;
+          };
+    
+          return readStream().catch(error => {
+            console.error("读取流时发生错误:", error); // 打印读取流时的错误信息
+            throw error;
+          });
+        } else {
+          return null; // 如果响应体为空，返回 null
+        }
+      } catch (e: any) {
+        const errorMessage = e.name === 'AbortError' ? "网络请求超时" : e.message;
+        console.error(errorMessage); // 打印错误信息到控制台
+        const errorMessageElement = document.getElementById('error-message'); // 获取错误消息元素
+        if (errorMessageElement) {
+          errorMessageElement.textContent = errorMessage; // 更新错误消息元素的文本内容
+        }
+        throw new Error(errorMessage); // 抛出错误，以便上层处理
+      }
+    }
 
   
   // 优化版本：使用 text 作为参数名（原始版本：使用 s 作为参数名。）参数名更具描述性，代码可读性更好。
@@ -438,7 +536,7 @@ export async function openAIWithStream(
   }
 
         
-// 终局函数2:runGptBlock中的openAIWithStreamGpts的机器注释+异常分类处理的定稿版（10.26号上午定稿，含10种异常分类处理场景）；共进行了30-40次左右测试,很少出错！！！
+// 终局函数2:runGptBlock中的openAIWithStreamGptsID的机器注释+异常分类处理的定稿版（10.26号上午定稿，含10种异常分类处理场景）；共进行了30-40次左右测试,很少出错！！！
 // （10.26号下午）特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")两种额外的异常处理方式;
 
 // 1.异步处理：使用 async/await 语法，使代码更简洁、易读。   
@@ -446,7 +544,7 @@ export async function openAIWithStream(
 // 3.超时机制：增加了超时机制，防止长时间挂起，提高系统的健壮性和用户体验。
 // 4.统一错误提示：无论错误的具体原因是什么，都提供一个统一的用户友好的错误提示信息。
 
-export async function openAIWithStreamGpts(
+export async function openAIWithStreamGptsID(
   input: string,
   openAiOptions: OpenAIOptions,
   onContent: (content: string) => void,
@@ -456,7 +554,7 @@ export async function openAIWithStreamGpts(
 
   try {
     const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
-    // console.log("openAIWithStreamGpts重要测试:input:", input); //单独新增代码（测试用） 打印读取的“user命令”
+    // console.log("openAIWithStreamGptsID重要测试:input:", input); //单独新增代码（测试用） 打印读取的“user命令”
     // console.log("重要测试gptsID:", openAiOptions.gpts); // 单独新增代码（测试用） 打印 gptsID  
     // console.log("重要测试apikey:", openAiOptions.apiKey); // 单独新增代码（测试用） 打印 gptsID 
     // console.log("重要测试completionEndpoint:", openAiOptions.completionEndpoint); // 单独新增代码（测试用） 打印 gptsID  
@@ -566,6 +664,269 @@ export async function openAIWithStreamGpts(
     onStop(); // 确保在任何情况下都调用 onStop 回调
   }
 }
+
+
+// 新增函数1 for gpts-toml
+// 优化后的 checkAndExtractImagePrompt 函数
+
+const processedParagraphs = new Set<string>();
+
+const imageKeywords = [
+  "图片生成", "需绘图", "绘图需求",
+  "image generation", "image description", "drawing", "painting"
+];
+
+function removeDrawingMarkers(text: string): string {
+  return text.replace(/【需绘图】|【图片生成】|【绘图需求】/g, '').trim();
+}
+
+function checkAndExtractImagePrompt(
+  paragraph: string,
+  backgroundPrompt: string,
+  isLastParagraph: boolean = false
+): {
+  hasRequest: boolean;
+  prompt: string;
+} {
+  let hasRequest = false;
+  let prompt = "";
+
+  // 从 backgroundPrompt 中提取实际的用户输入内容
+  // 通常用户输入在 logseq 块中会包含 id:: 这样的标识
+  const userInputMatch = backgroundPrompt.match(/^(.*?)(?:\s*id::|$)/s);
+  const cleanBackgroundPrompt = userInputMatch ? userInputMatch[1].trim() : backgroundPrompt.trim();
+
+  for (const keyword of imageKeywords) {
+    const regex = new RegExp(keyword, 'g');
+    const matchResult = regex.test(paragraph);
+    if (matchResult) {
+      hasRequest = true;
+      const cleanedParagraph = removeDrawingMarkers(paragraph);
+      // 只使用实际的用户输入和当前段落来构建提示
+      prompt = `**背景：** ${cleanBackgroundPrompt} **子板块：** ${cleanedParagraph}`;
+      if (prompt) {
+        break;
+      }
+    }
+  }
+
+  if (hasRequest) {
+    if (isLastParagraph || !processedParagraphs.has(prompt)) {
+      processedParagraphs.add(prompt);
+      return { hasRequest: true, prompt };
+    }
+  }
+
+  return { hasRequest: false, prompt: "" };
+}
+
+// 主函数
+// 优化后的 openAIWithStreamGptsToml 函数
+function cleanUserInput(input: string): string {
+  // 移除 markdown 代码块和系统提示
+  const markdownMatch = input.match(/'''markdown\n([\s\S]*?)'''([\s\S]*)/);
+  if (markdownMatch && markdownMatch[2]) {
+    // 返回 markdown 代码块之后的实际用户输入
+    return markdownMatch[2].trim();
+  }
+  return input.trim();
+}
+
+export async function openAIWithStreamGptsToml(
+  input: string,
+  openAiOptions: OpenAIOptions,
+  onContent: (content: string) => void,
+  onImagePrompt: (imagePrompt: string) => void,
+  onStop: () => void
+): Promise<string | null> {
+  // 清理输入，移除系统提示词
+  const cleanedInput = cleanUserInput(input);
+  
+  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+  const engine = options.completionEngine!;
+
+      const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [{ role: "user", content: input }];
+      if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
+        inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
+      }
+      const body = {
+        messages: inputMessages,
+        temperature: options.temperature,
+        max_tokens: options.maxTokens,
+        top_p: 1,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        model: engine,
+        stream: true
+      };
+
+      const response = await fetch(`${options.completionEndpoint}/chat/completions`, {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: {
+          Authorization: `Bearer ${options.apiKey}`,
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream'
+        },
+        signal: AbortSignal.timeout(120000)
+      });
+
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        const error = {
+          response: {
+            status: response.status,
+            data: { error: { code: "", message: errorMessage, type: "" } }
+          }
+        };
+        handleOpenAIError(error);
+        throw new Error(`请求失败，状态码: ${response.status}，错误信息: ${errorMessage}`);
+      }
+
+      if (response.body) {
+        const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+        let result = "";
+        let currentParagraph = "";
+
+        const readStream = async (): Promise<any> => {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              reader.cancel();
+              if (currentParagraph.trim()) {
+                console.log("完整段落(最后一个):", currentParagraph);
+                // 使用清理后的输入
+                const { hasRequest, prompt } = checkAndExtractImagePrompt(
+                  currentParagraph.trim(),
+                  cleanedInput,  // 这里使用清理后的输入
+                  true
+                );
+                if (hasRequest) {
+                  result += currentParagraph + "\n为该段落绘图中，请稍后...\n";
+                  onContent(currentParagraph + "\n为该段落绘图中，请稍后...\n");
+                  onImagePrompt(prompt);
+                } else {
+                  result += currentParagraph;
+                  onContent(currentParagraph);
+                }
+              }
+              onStop();
+              return result;
+            }
+
+            if (value) {
+              const data = getDataFromStreamValue(value);
+              if (data && data.length > 0) {
+                for (const item of data) {
+                  if (item.choices[0]?.delta?.content) {
+                    const content = item.choices[0].delta.content;
+                    currentParagraph += content;
+                    
+                    if (content.includes("\n\n") || content.includes("\n### ")) {
+                      const paragraphs = currentParagraph.split(/\n\n|\n### /);
+                      for (let i = 0; i < paragraphs.length - 1; i++) {
+                        const paragraph = paragraphs[i].trim();
+                        if (paragraph) {
+                          console.log("完整段落:", paragraph);
+                          // 使用清理后的输入
+                          const { hasRequest, prompt } = checkAndExtractImagePrompt(
+                            paragraph,
+                            cleanedInput,  // 这里使用清理后的输入
+                            false
+                          );
+                          if (hasRequest) {
+                            result += paragraph + "\n为该段落绘图中，请稍后...\n";
+                            onContent(paragraph + "\n为该段落绘图中，请稍后...\n");
+                            onImagePrompt(prompt);
+                          } else {
+                            result += paragraph + "\n\n";
+                            onContent(paragraph + "\n\n");
+                          }
+                        }
+                      }
+                      currentParagraph = paragraphs[paragraphs.length - 1];
+                    }
+                  }
+                }
+              }
+            }
+          }
+        };
+
+        return readStream().catch(error => {
+          reader.cancel();
+          onStop();
+          console.error("读取流时发生错误:", error);
+          handleOpenAIError(error);
+          throw error;
+        });
+      }
+      return null;
+
+    
+}
+
+
+
+// 新增函数2 for gpts-toml 
+export async function dallE_gptsToml(prompt: string, openAiOptions: OpenAIOptions, imageSize: string = '1024x1024'): Promise<{ url: string } | { error: string }> {
+  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+
+  console.log("Starting dallE_gptsToml with prompt:", prompt);
+  console.log("OpenAI Options:", options);
+
+  try {
+    const body = {
+      prompt: prompt,
+      n: 1,
+      size: imageSize,
+      response_format: "url",
+      "model": options.dalleModel
+    };
+
+    const url = `${options.completionEndpoint}/images/generations`;
+    console.log(`Request URL: ${url}`); // 打印请求的URL
+    console.log(`Curl Command: curl -X POST "${url}" -H "Authorization: Bearer ${options.apiKey}" -H "Content-Type: application/json" -d '${JSON.stringify(body)}'`); // 打印curl命令
+
+    const response = await fetch(url, {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: {
+        Authorization: `Bearer ${options.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      signal: AbortSignal.timeout(120000) // 设置请求超时
+    });
+
+    console.log("Response Status:", response.status, "Response Headers:", response.headers);
+
+    if (!response.ok) {
+      const errorMessage = await response.text();
+      console.error("Response not OK, status:", response.status, "statusText:", response.statusText, "ErrorMessage:", errorMessage);
+      return { error: `请求失败，状态码: ${response.status}，错误信息: ${errorMessage}` };
+    }
+
+    const data = await response.json();
+    console.log("Response Data:", data);
+
+    if (data && data.data && data.data.length > 0) {
+      const imageUrl = data.data[0].url;
+      // console.log(`Generated Image URL: ${imageUrl}`); // 打印生成的图像URL
+      return { url: imageUrl };
+    } else {
+      console.error("No image generated in response data");
+      return { error: "未生成图像" };
+    }
+  } catch (e: any) {
+    console.error("Error in dallE_gptsToml:", e);
+    if (e.name === 'AbortError') {
+      return { error: "请求超时" };
+    }
+    return { error: `请求失败，错误信息: ${e.message}` };
+  }
+}
+
+
 
 
 // 新增函数2 系列

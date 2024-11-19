@@ -1,6 +1,6 @@
 import { IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { getAudioFile, getPageContentFromBlock, getImageUrlFromBlock,saveDalleImage } from "./logseq";
-import { OpenAIOptions, dallE, whisper, openAIWithStream, readImageURL, readLocalImageURL, openAIWithStreamGpts } from "./openai";
+import { OpenAIOptions, dallE, whisper, openAIWithStream, readImageURL, readLocalImageURL, openAIWithStreamGptsID, openAIWithStreamGptsToml ,dallE_gptsToml} from "./openai";
 import { getOpenaiSettings } from "./settings";
 import { Command } from "../ui/LogseqAI";
 
@@ -281,8 +281,8 @@ export async function runGptPage(b: IHookEvent) {
         result = openAISettings.injectPrefix + result;
       }
   
-      // 将 gptsID 作为参数传递给 openAIWithStreamGpts
-      await openAIWithStreamGpts(currentBlock.content, { ...openAISettings, gpts: gptsID }, async (content: string) => {
+      // 将 gptsID 作为参数传递给 openAIWithStreamGptsID
+      await openAIWithStreamGptsID(currentBlock.content, { ...openAISettings, gpts: gptsID }, async (content: string) => {
         result += content || "";
         if (insertBlock) {
           await logseq.Editor.updateBlock(insertBlock.uuid, result);
@@ -329,7 +329,7 @@ export async function runGptsID(b: IHookEvent, gptsID: string, commandName: stri
       result = newPrefix; // 如果没有现有前缀，直接使用新前缀
     }
     // gpts: gptsID 会覆盖 openAISettings 中同名的属性。
-    await openAIWithStreamGpts(currentBlock.content, { ...openAISettings, gpts: gptsID }, async (content: string) => {
+    await openAIWithStreamGptsID(currentBlock.content, { ...openAISettings, gpts: gptsID }, async (content: string) => {
       result += content || "";
       if (insertBlock) {
         await logseq.Editor.updateBlock(insertBlock.uuid, result);
@@ -348,7 +348,7 @@ export async function runGptsID(b: IHookEvent, gptsID: string, commandName: stri
 
 
 // 新增：创建运行 prompts-gpts.toml 命令的处理函数
-export async function createRunGptsTomlCommand(command: Command) {
+/* export async function createRunGptsTomlCommand(command: Command) {
   return async (b: IHookEvent) => {
     const openAISettings = getOpenaiSettings();
     validateSettings(openAISettings);
@@ -400,7 +400,123 @@ export async function createRunGptsTomlCommand(command: Command) {
       handleOpenAIError(e);
     }
   };
+} */
+
+
+// 新增函数1 for gpts-toml
+function parseImageSizeFromPrompt(prompt: string): string | null {
+  const match = prompt.match(/(1024x1024|720x1280|1280x720)/);
+  return match ? match[0] : null;
 }
+
+// 新增函数2 for gpts-toml
+// 优化后的 createRunGptsTomlCommand 函数
+export async function createRunGptsTomlCommand(command: Command) {
+  return async (b: IHookEvent) => {
+    const openAISettings = getOpenaiSettings();
+    validateSettings(openAISettings);
+
+    const currentBlock = await logseq.Editor.getBlock(b.uuid);
+    if (!currentBlock) {
+      console.error("No current block");
+      return;
+    }
+
+    if (currentBlock.content.trim().length === 0) {
+      logseq.App.showMsg("Empty Content", "warning");
+      console.warn("Blank page");
+      return;
+    }
+
+    try {
+      let result = "";
+      let pendingImagePrompts = new Map<string, string>();
+      
+      const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
+        sibling: false,
+      });
+
+      const newPrefix = `${command.name}\n`;
+      if (openAISettings.injectPrefix && result.length === 0) {
+        result = openAISettings.injectPrefix + newPrefix;
+      } else {
+        result = newPrefix;
+      }
+
+      const finalPrompt = command.prompt + currentBlock.content;
+      const imageSize = parseImageSizeFromPrompt(finalPrompt) || '1024x1024';
+
+      const onContent = async (content: string) => {
+        result += content;
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+      };
+
+      const onImagePrompt = async (imagePrompt: string) => {
+        console.log(`Image Prompt: ${imagePrompt}`);
+        const placeholder = "为该段落绘图中，请稍后...\n";
+        pendingImagePrompts.set(imagePrompt, placeholder);
+        
+        const imageUrl = await dallE_gptsToml(imagePrompt, openAISettings, imageSize);
+        if ('url' in imageUrl) {
+          // 修改图片输出格式，增加图片显示
+          const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+          // 替换对应段落的占位符
+          result = result.replace(placeholder, imageMarkdown);
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+          pendingImagePrompts.delete(imagePrompt);
+        } else {
+          console.error("Failed to generate image:", imageUrl.error);
+          // 删除失败的图片生成提示并添加额外换行
+          result = result.replace(placeholder, "\n");
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+          pendingImagePrompts.delete(imagePrompt);
+        }
+      };
+
+
+      const onStop = () => {
+        console.log("Processing completed.");
+      };
+
+      await openAIWithStreamGptsToml(finalPrompt, openAISettings, onContent, onImagePrompt, onStop);
+
+      if (!result) {
+        logseq.App.showMsg("No OpenAI content", "warning");
+        return;
+      }
+
+      if (insertBlock) {
+        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+      }
+    } catch (e: any) {
+      console.error("Error in runGptsCommand:", e);
+      handleOpenAIError(e);
+    }
+  };
+}
+
+
+
+
+
+
+
+
+/* const updateBlock = async (uuid: string, content: string) => {
+  await logseq.Editor.updateBlock(uuid, content);
+  // console.log(`Updated block with UUID: ${uuid}`);
+}; */
+
+
+
+
+
 
 
 export async function runDalleBlock(b: IHookEvent) {

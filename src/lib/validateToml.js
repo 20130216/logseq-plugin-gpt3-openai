@@ -19,18 +19,34 @@ function isValidIdentifier(key) {
 
 function sanitizeKey(key) {
   console.log(`原始键名: ${key}`);
-  // 检查是否为英文表头
-  if (/^[a-zA-Z0-9_ ]+$/.test(key)) {
-    return key.replace(/ /g, '_');
+
+  // 检查是否为纯英文表头（包含字母、数字、空格和常见标点）
+  if (/^[a-zA-Z0-9\s\(\)]+$/.test(key)) {
+    // 处理英文表头，保持单词的完整性
+    let sanitizedKey = key
+      .replace(/[^a-zA-Z0-9\s]/g, ' ') // 将标点符号转换为空格
+      .trim()                          // 去除前后空格
+      .replace(/\s+/g, '_');          // 将连续空格转换为单个下划线
+    
+    console.log(`英文处理后: ${sanitizedKey}`);
+    return sanitizedKey;
   }
 
-  // 将中文字符转换为拼音，并在每个拼音之间加上下划线
-  let sanitizedKey = key.split('').map(char => {
+  // 处理包含中文的表头
+  let sanitizedKeyParts = [];
+  let currentWord = '';
+
+  for (let char of key) {
     if (/[\u4e00-\u9fa5]/.test(char)) {
-      // 获取拼音数组，确保每个拼音之间加上下划线
+      // 如果当前积累的英文单词不为空，先处理它
+      if (currentWord) {
+        sanitizedKeyParts.push(currentWord.trim());
+        currentWord = '';
+      }
+      
+      // 获取拼音数组
       const pinyinArray = pinyin(char, { style: 'normal', segment: true });
       if (Array.isArray(pinyinArray) && pinyinArray.length > 0) {
-        // 确保每个拼音都是字符串并去除声调符号
         const cleanPinyin = pinyinArray.map(pinyinPart => {
           if (Array.isArray(pinyinPart) && pinyinPart.length > 0) {
             return pinyinPart[0].toLowerCase().replace(/[\u0300-\u036f]/g, '');
@@ -39,34 +55,44 @@ function sanitizeKey(key) {
           }
           return '';
         }).join('');
-        return cleanPinyin;
-      } else {
-        return char; // 如果无法获取拼音，保留原字符
+        
+        sanitizedKeyParts.push(cleanPinyin);
       }
+    } else if (/[a-zA-Z0-9]/.test(char)) {
+      currentWord += char;
     } else {
-      return char;
+      // 处理非中文非英文字符
+      if (currentWord) {
+        sanitizedKeyParts.push(currentWord.trim());
+        currentWord = '';
+      }
     }
-  }).join('_'); // 在每个拼音之间加上下划线
-  console.log(`转换拼音后: ${sanitizedKey}`);
-  // 替换其他非字母数字字符为下划线
-  sanitizedKey = sanitizedKey.replace(/[^a-zA-Z0-9_]/g, '_');
-  console.log(`替换非字母数字字符后: ${sanitizedKey}`);
+  }
+
+  // 处理最后可能剩余的英文单词
+  if (currentWord) {
+    sanitizedKeyParts.push(currentWord.trim());
+  }
+
+  // 合并所有部分，用下划线连接
+  let sanitizedKey = sanitizedKeyParts.join('_').toLowerCase();
+  console.log(`合并后: ${sanitizedKey}`);
+
+  // 确保以字母或下划线开头
   if (!/^[a-zA-Z_]/.test(sanitizedKey)) {
-    // 确保第一个字符为字母或下划线
     sanitizedKey = 'key_' + sanitizedKey;
   }
-  console.log(`确保第一个字符为字母或下划线后: ${sanitizedKey}`);
-  // 去除连续的下划线
-  sanitizedKey = sanitizedKey.replace(/_{2,}/g, '_');
-  console.log(`去除连续的下划线后: ${sanitizedKey}`);
-  // 去除前后的下划线
-  sanitizedKey = sanitizedKey.replace(/^_+|_+$/g, '');
-  console.log(`去除前后的下划线后: ${sanitizedKey}`);
 
-  // 如果最终结果为空，则添加一个默认前缀
+  // 清理连续的下划线
+  sanitizedKey = sanitizedKey
+    .replace(/_{2,}/g, '_')     // 将多个连续下划线替换为单个
+    .replace(/^_+|_+$/g, '');   // 去除首尾下划线
+
+  // 如果处理后为空，使用默认值
   if (sanitizedKey === '') {
     sanitizedKey = 'invalid_key';
   }
+
   console.log(`最终键名: ${sanitizedKey}`);
   return sanitizedKey;
 }

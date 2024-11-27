@@ -108,44 +108,54 @@ const LogseqApp = () => {
 
   // 处理快捷键
   useEffect(() => {
-    if (logseq.settings!["popupShortcut"]) {
-      logseq.App.registerCommandShortcut(
-        { binding: logseq.settings!["popupShortcut"] },
-        async () => {
-          const activeText = await logseq.Editor.getEditingCursorPosition();
-          const currentBlock = await logseq.Editor.getCurrentBlock();
-          const currentPage = await logseq.Editor.getCurrentPage();
-          const selectedBlocks = await logseq.Editor.getSelectedBlocks();
-
-          if (selectedBlocks && selectedBlocks.length > 0) {
-            updateAppState(draft => {
-              draft.selection = {
-                type: "multipleBlocksSelected",
-                blocks: selectedBlocks,
-              };
-            });
-          } else if (!activeText && !currentPage) {
-            logseq.App.showMsg("Put cursor in block or navigate to specific page to use keyboard shortcut", "warning");
-            return;
-          } else if (activeText && currentBlock) {
-            updateAppState(draft => {
-              draft.selection = {
-                type: "singleBlockSelected",
-                block: currentBlock,
-              };
-            });
-          } else {
-            updateAppState(draft => {
-              draft.selection = {
-                type: "noBlockSelected",
-              };
-            });
+    const registerPopupShortcut = () => {
+      console.log("Registering popup shortcut...");
+      if (logseq.settings!["popupShortcut"]) {
+        logseq.App.registerCommandShortcut(
+          { binding: logseq.settings!["popupShortcut"] },
+          async () => {
+            console.log(`Running popup shortcut: ${logseq.settings!["popupShortcut"]}`);
+            const activeText = await logseq.Editor.getEditingCursorPosition();
+            const currentBlock = await logseq.Editor.getCurrentBlock();
+            const currentPage = await logseq.Editor.getCurrentPage();
+            const selectedBlocks = await logseq.Editor.getSelectedBlocks();
+  
+            if (selectedBlocks && selectedBlocks.length > 0) {
+              console.log("Multiple blocks selected.");
+              updateAppState(draft => {
+                draft.selection = {
+                  type: "multipleBlocksSelected",
+                  blocks: selectedBlocks,
+                };
+              });
+            } else if (!activeText && !currentPage) {
+              console.log("No valid context for shortcut.");
+              logseq.App.showMsg("Put cursor in block or navigate to specific page to use keyboard shortcut", "warning");
+              return;
+            } else if (activeText && currentBlock) {
+              console.log("Single block selected.");
+              updateAppState(draft => {
+                draft.selection = {
+                  type: "singleBlockSelected",
+                  block: currentBlock,
+                };
+              });
+            } else {
+              console.log("No block selected.");
+              updateAppState(draft => {
+                draft.selection = {
+                  type: "noBlockSelected",
+                };
+              });
+            }
+            openUI();
           }
-          openUI();
-        }
-      );
-    }
-  }, []);
+        );
+      }
+    };
+  
+    registerPopupShortcut();
+  }, [logseq.settings]);
 
   // 注册 gpt 相关命令
   React.useEffect(() => {
@@ -540,64 +550,50 @@ const LogseqApp = () => {
     "// 注册分隔符",       
 
   ]
-
+  
   const createRunGptsIDCommand = (gptsID: string, commandName: string) => async (b: IHookEvent) => {
+    console.log(`Running command: ${commandName} with gptsID: ${gptsID}`);
     const block = await logseq.Editor.getBlock(b.uuid);
     if (block) {
+      console.log("Block found, updating app state and opening UI.");
       updateAppState(draft => {
         draft.selection = {
           type: "singleBlockSelected",
           block: block,
         };
       });
-      openUI();
+      // openUI();
     } else {
-      // 给用户一个友好的提示
+      console.log("Block not found, showing warning message.");
       logseq.App.showMsg("所选块无效，请选择一个有效的块。", "warning");
     }
-    // 调用实际的处理函数
     await runGptsID(b, gptsID, commandName);
   };
 
-  if (gptsIDCommands[0] && typeof gptsIDCommands[0] === 'string' && gptsIDCommands[0].startsWith("// 注册分隔符")) {
-    logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
-  }
-
-  let insertSeparator = false;
-
   gptsIDCommands.forEach((item, index, array) => {
-    if (typeof item === 'string' && item.startsWith("// 注册分隔符")) {
-      if (index > 0 && typeof array[index - 1] === 'object') {
-        logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
-      }
-      insertSeparator = true;
-    } else if (insertSeparator) {
-      if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
-        logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
-        logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
-      }
-      insertSeparator = false;
-    } else {
-      if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
-        logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
-        logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
-      }
+    if (index > 0 && typeof array[index - 1] === 'string' && (array[index - 1] as string).startsWith("// 注册分隔符")) {
+      console.log("Registering separator...");
+      logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
     }
-
-    if (index === array.length - 1 && insertSeparator) {
-      if (typeof item !== 'string' || !item.startsWith("// 注册分隔符")) {
-        logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
-      }
+    if (typeof item === 'object' && 'commandName' in item && 'gptsID' in item) {
+      console.log(`Registering command: ${item.commandName}`);
+      logseq.Editor.registerSlashCommand(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
+      logseq.Editor.registerBlockContextMenuItem(item.commandName, createRunGptsIDCommand(item.gptsID, item.commandName));
     }
   });
+
+  if (gptsIDCommands.length > 0 && typeof gptsIDCommands[gptsIDCommands.length - 1] === 'object') {
+    console.log("Registering final separator...");
+    logseq.Editor.registerBlockContextMenuItem("------------------------------------", () => Promise.resolve());
+  }
 };
 
 registerGptsIDCommands();
 }, []);
 
+
   // 合并所有命令
   const allCommands = [...builtInCommands, ...builtInGptsTomlCommands, ...userCommands];
-
 
   const handleCommand = async (command: Command, onContent: (content: string) => void): Promise<string> => {
     let inputText = "";

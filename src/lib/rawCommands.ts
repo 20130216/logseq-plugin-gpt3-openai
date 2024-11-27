@@ -1,70 +1,134 @@
 import { IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
-import { getAudioFile, getPageContentFromBlock, getImageUrlFromBlock,saveDalleImage } from "./logseq";
-import { OpenAIOptions, dallE, whisper, openAIWithStream, readImageURL, readLocalImageURL, openAIWithStreamGptsID, openAIWithStreamGptsToml ,dallE_gptsToml} from "./openai";
+import {
+  getAudioFile,
+  getPageContentFromBlock,
+  getImageUrlFromBlock,
+  saveDalleImage,
+} from "./logseq";
+import {
+  OpenAIOptions,
+  dallE,
+  whisper,
+  openAIWithStream,
+  readImageURL,
+  readLocalImageURL,
+  openAIWithStreamGptsID,
+  openAIWithStreamGptsToml,
+  dallE_gptsToml,
+} from "./openai";
 import { getOpenaiSettings } from "./settings";
 import { Command } from "../ui/LogseqAI";
 
-  // 10种应用场景的分门别类处理：所有异常最终都会被 runGptBlock 捕获并传递给 handleOpenAIError 函数来处理，那么你只需要在 handleOpenAIError 中分门别类地处理各种异常情况即可。这样可以确保所有的异常处理逻辑集中在一个地方，便于维护和管理。  
-  // 10.26号上午定稿 下午又特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")两种额外的异常处理方式;
-  export function handleOpenAIError(e: any) {
-    if (
-      !e.response ||
-      !e.response.status ||
-      !e.response.data ||
-      !e.response.data.error
-    ) {
-      console.error(`未知的 OpenAI 错误: ${e}`);
-      logseq.App.showMsg("未知的 OpenAI 错误，一般是网络不畅导致的系统超时，请稍后重试！", "error");
-      return;
-    }
-  
-    const httpStatus = e.response.status;
-    const errorCode = e.response.data.error.code;
-    const errorMessage = e.response.data.error.message;
-    const errorType = e.response.data.error.type;
-  
-    if (httpStatus === 401) {
-      console.error("OpenAI API 密钥无效。");
-      logseq.App.showMsg("无效的 OpenAI API 密钥！", "error");
-    } else if (httpStatus === 429) {
-      if (errorType === "insufficient_quota") {
-        console.error(
-          "超出 OpenAI API 配额。您的试用期可能已结束。您可以在 https://gptgod.cloud/account/中购买更多配额。"
-        );
-        logseq.App.showMsg("OpenAI 配额已用完！", "error");
-      } else {
-        console.warn(
-          "OpenAI API 请求频率过高。请减缓请求速度。"
-        );
-        logseq.App.showMsg("OpenAI 请求频率过高！", "warning");
-      }
-    } else if (httpStatus === 400) {
-      console.error(`请求参数错误: ${errorMessage}`);
-      logseq.App.showMsg("请求参数错误，请检查输入！", "error");
-    } else if (httpStatus === 500) {
-      console.error(`OpenAI 服务器错误: ${errorMessage}`);
-      logseq.App.showMsg("OpenAI 服务器错误，请稍后重试！", "error");
-    } else if (httpStatus === 503) {
-      console.error(`OpenAI 服务不可用: ${errorMessage}`);
-      logseq.App.showMsg("OpenAI 服务不可用，请稍后重试！", "error");
-    } else if (e.name === 'AbortError') {
-      console.error("网络请求超时");
-      logseq.App.showMsg("网络请求超时，请检查网络连接！", "error");
-    } else if (e.message === "输出数据流超时") {
-      console.error("输出数据流超时");
-      logseq.App.showMsg("输出数据流超时，请检查网络连接！", "error");
-    } else if (e.name === "DOMException" && e.message.includes("BodyStreamBuffer was aborted")) {
-      console.error("流被中断，请检查网络连接");
-      logseq.App.showMsg("输出数据流被中断，请检查网络连接！", "error");
-    } else if (e.message.includes("流超时")) {
-      console.error("流超时，请检查网络连接");
-      logseq.App.showMsg("输出数据流超时，请检查网络连接！", "error");
+// 10种应用场景的分门别类处理：所有异常最终都会被 runGptBlock 捕获并传递给 handleOpenAIError 函数来处理，那么你只需要在 handleOpenAIError 中分门别类地处理各种异常情况即可。这样可以确保所有的异常处理逻辑集中在一个地方，便于维护和管理。
+// 10.26号上午定稿 下午又特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")两种额外的异常处理方式;
+export function handleOpenAIError(e: any) {
+  let errorMessage = "";
+
+  if (e instanceof TypeError && e.message === "Failed to fetch") {
+    console.error(`Network error: ${e.message}`);
+    logseq.App.showMsg(
+      "网络连接失败或 API 配置有问题，请检查您的网络连接或 API 配置！",
+      "error"
+    );
+    errorMessage =
+      "网络连接失败或 API 配置有问题，请检查您的网络连接或 API 配置！";
+  } else if (e.name === "AbortError") {
+    console.error(`Request aborted: ${e.message}`);
+    logseq.App.showMsg(
+      "请求已取消，可能是由于超时或其他原因导致。请稍后再试！",
+      "error"
+    );
+    errorMessage = "请求已取消，可能是由于超时或其他原因导致。请稍后再试！";
+  } else if (e instanceof Error) {
+    if (e.message.includes("Unexpected Content-Type")) {
+      console.error(`Content-Type error: ${e.message}`);
+      logseq.App.showMsg(
+        "API 返回了不正确的内容类型，一般是 API 端点出现问题，请仔细检查 API 端点！",
+        "error"
+      );
+      errorMessage =
+        "API 返回了不正确的内容类型，一般是 API 端点出现问题，请仔细检查 API 端点！";
+    } else if (e.message.includes("Unexpected data format")) {
+      console.error(`Data parsing error: ${e.message}`);
+      logseq.App.showMsg("数据解析错误，请检查 API 返回的数据格式！", "error");
+      errorMessage = "数据解析错误，请检查 API 返回的数据格式！";
+    } else if (e.message === "未生成图像") {
+      console.error(`Image generation error: ${e.message}`);
+      logseq.App.showMsg("未生成图像，请检查输入或 API 配置！", "error");
+      errorMessage = "未生成图像，请检查输入或 API 配置！";
     } else {
-      console.error(`未知的 OpenAI 错误: ${errorType} ${errorCode} ${errorMessage}`);
-      logseq.App.showMsg("未知的 OpenAI 错误，请稍后重试！", "error");
+      // 处理其他未分类的错误
+      console.error(`General error: ${e.message}`);
+      logseq.App.showMsg(
+        `异常提醒： ${e.message}！ \n请根据该异常提醒去溯源问题根源！`,
+        "error"
+      );
+      errorMessage = `异常提醒： ${e.message}！ \n请根据该异常提醒去溯源问题根源！`;
+    }
+  } else if (!e.response || !e.response.status) {
+    console.error(`Unknown OpenAI error: ${e}`);
+    logseq.App.showMsg(
+      "未知的 OpenAI 错误，一般是网络不畅导致的系统超时，请稍后重试！",
+      "error"
+    );
+    errorMessage =
+      "未知的 OpenAI 错误，一般是网络不畅导致的系统超时，请稍后重试！";
+  } else {
+    const httpStatus = e.response.status;
+    const errorMessageFromResponse = e.response.statusText;
+
+    switch (httpStatus) {
+      case 401:
+        console.error("OpenAI API key invalid.");
+        logseq.App.showMsg("无效的 OpenAI API 密钥！", "error");
+        errorMessage = "无效的 OpenAI API 密钥！";
+        break;
+      case 429:
+        console.warn(
+          "OpenAI API request rate too high. Please slow down your requests."
+        );
+        logseq.App.showMsg(
+          "OpenAI 请求频率过高！或你的额度已不够！",
+          "warning"
+        );
+        errorMessage = "OpenAI 请求频率过高！或你的额度已不够！";
+        break;
+      case 400:
+        console.error(`Bad request parameters: ${errorMessageFromResponse}`);
+        logseq.App.showMsg("请求参数错误，请检查输入！", "error");
+        errorMessage = "请求参数错误，请检查输入！";
+        break;
+      case 500:
+        console.error(`OpenAI server error: ${errorMessageFromResponse}`);
+        logseq.App.showMsg("OpenAI 服务器错误，请稍后重试！", "error");
+        errorMessage = "OpenAI 服务器错误，请稍后重试！";
+        break;
+      case 503:
+        console.error(
+          `OpenAI service unavailable: ${errorMessageFromResponse}`
+        );
+        logseq.App.showMsg(
+          "OpenAI 服务器当前无法处理请求，若非服务器临时过载或正在进行维护，请检查API的配置是否准确！",
+          "error"
+        );
+        errorMessage =
+          "OpenAI 服务器当前无法处理请求，若非服务器临时过载或正在进行维护，请检查API的配置是否准确！";
+        break;
+      default:
+        console.error(
+          `Unknown OpenAI error: HTTP Status ${httpStatus}, Message: ${errorMessageFromResponse}`
+        );
+        logseq.App.showMsg(
+          `未知的 OpenAI 错误: HTTP Status ${httpStatus}, Message: ${errorMessageFromResponse}`,
+          "error"
+        );
+        errorMessage = `未知的 OpenAI 错误: HTTP Status ${httpStatus}, Message: ${errorMessageFromResponse}`;
+        break;
     }
   }
-  
+
+  return { error: errorMessage }; // 返回包含错误信息的对象
+}
 
 function validateSettings(settings: OpenAIOptions) {
   if (!settings.apiKey) {
@@ -77,18 +141,20 @@ function validateSettings(settings: OpenAIOptions) {
   }
 
   if (
-    settings.dalleImageSize !== '256' &&
-    settings.dalleImageSize !== '256x256' &&
-    settings.dalleImageSize !== '512' &&
-    settings.dalleImageSize !== '512x512' &&
-    settings.dalleImageSize !== '1024' &&
-    settings.dalleImageSize !== '1024x1024' &&
-    settings.dalleImageSize !== '1024x1792' &&
-    settings.dalleImageSize !== '1792x1024'
+    settings.dalleImageSize !== "256" &&
+    settings.dalleImageSize !== "256x256" &&
+    settings.dalleImageSize !== "512" &&
+    settings.dalleImageSize !== "512x512" &&
+    settings.dalleImageSize !== "1024" &&
+    settings.dalleImageSize !== "1024x1024" &&
+    settings.dalleImageSize !== "1024x1792" &&
+    settings.dalleImageSize !== "1792x1024"
   ) {
     console.error("DALL-E image size must be 256, 512, or 1024.");
     logseq.App.showMsg("DALL-E image size must be 256, 512, or 1024.", "error");
-    throw new Error("DALL-E image size must be 256, 512, 1024, 1024x1792, or 179x1024");
+    throw new Error(
+      "DALL-E image size must be 256, 512, 1024, 1024x1792, or 179x1024"
+    );
   }
 }
 
@@ -113,9 +179,13 @@ export async function runGptBlock(b: IHookEvent) {
   try {
     let result = "";
     // { sibling: false } 表示插入的新块是当前块的子块，而不是同级块。
-    const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
-      sibling: false,
-    });
+    const insertBlock = await logseq.Editor.insertBlock(
+      currentBlock.uuid,
+      result,
+      {
+        sibling: false,
+      }
+    );
 
     if (openAISettings.injectPrefix && result.length == 0) {
       // 确保在后续内容生成之前，前缀已经被添加到 result 中，比如 injectPrefix 被设置为：“#Gpt4o”
@@ -133,78 +203,36 @@ export async function runGptBlock(b: IHookEvent) {
 
     // currentBlock.content：这是用户输入的内容，作为请求的一部分传递给 OpenAI API。
     // async (content: string) => {...}：这里的 content 是从 OpenAI API 响应中获取的内容块，是逐步递增动态完善的 content，每读取到一个新的数据块，都会调用这个回调函数，将新的内容块拼接到 result 中。
-    
+
     //## openAIWithStream 函数：负责与 OpenAI API 交互，处理流式响应，并逐步拼接结果。
     //## openAIWithStream 函数的主要作用是将当前内容 currentBlock.content 传入 OpenAI API，通过 async (content: string) => {...} 响应之后，递归调用返回结果，分步更新块内容。
     //## async (content: string) => {...}：内容回调函数，用于处理从 OpenAI API 获取到的内容。
     // 内容回调：将从 OpenAI API 获取的内容逐步拼接到 result 中，并更新插入的新块。
     // () => {}：停止回调函数，当流读取完成后会调用这个函数。
-    await openAIWithStream(currentBlock.content, openAISettings, async (content: string) => {
-      // 将 content 拼接到 result 中；如果 content 为 null 或 undefined，则使用空字符串 ""
-      // 这是在内容回调函数中使用的 result，用于拼接从 OpenAI API 响应中获取的内容块。
-      result += content || "";
-      if (null != insertBlock) {
-        // 更新插入的新块的内容：result：拼接后的最终内容；await 关键字表示等待 logseq.Editor.updateBlock 完成后再继续执行后续代码。
-        await logseq.Editor.updateBlock(insertBlock.uuid, result);
-      }
-    }, () => {});
+    await openAIWithStream(
+      currentBlock.content,
+      openAISettings,
+      async (content: string) => {
+        // 将 content 拼接到 result 中；如果 content 为 null 或 undefined，则使用空字符串 ""
+        // 这是在内容回调函数中使用的 result，用于拼接从 OpenAI API 响应中获取的内容块。
+        result += content || "";
+        if (null != insertBlock) {
+          // 更新插入的新块的内容：result：拼接后的最终内容；await 关键字表示等待 logseq.Editor.updateBlock 完成后再继续执行后续代码。
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+      },
+      () => {}
+    );
 
     if (!result) {
       logseq.App.showMsg("No OpenAI content", "warning");
       return;
     }
   } catch (e: any) {
-    handleOpenAIError(e);  // 所有异常处理逻辑集中在 handleOpenAIError 函数中
+    handleOpenAIError(e); // 所有异常处理逻辑集中在 handleOpenAIError 函数中
   }
 }
 
-
-// 升级1-1-1-1-1-push7/9-1-push12/12-1-10.24:push24/25 测试25次，24次无bug，去除注释版（和上述注释版代码相同，仅仅是无注释的简洁版）
-/* export async function runGptBlock(b: IHookEvent) {
-  const openAISettings = getOpenaiSettings();
-  validateSettings(openAISettings);
-
-  const currentBlock = await logseq.Editor.getBlock(b.uuid);
-  if (!currentBlock) {
-    console.error("No current block");
-    return;
-  }
-
-  if (currentBlock.content.trim().length === 0) {
-    logseq.App.showMsg("Empty Content", "warning");
-    console.warn("Blank page");
-    return;
-  }
-
-  try {
-    let result = "";
-    const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
-      sibling: false,
-    });
-
-    if (openAISettings.injectPrefix && result.length === 0) {
-      result = openAISettings.injectPrefix + result;
-    }
-
-    await openAIWithStream(currentBlock.content, openAISettings, async (content: string) => {
-      result += content || "";
-      if (insertBlock) {
-        await logseq.Editor.updateBlock(insertBlock.uuid, result);
-      }
-    }, () => {});
-
-    if (!result) {
-      logseq.App.showMsg("No OpenAI content", "warning");
-      return;
-    }
-  } catch (e: any) {
-    handleOpenAIError(e);
-  }
-} */
-
-
-  
-  
 export async function runGptPage(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);
@@ -230,76 +258,40 @@ export async function runGptPage(b: IHookEvent) {
 
   try {
     let result = "";
-    const insertBlock = await logseq.Editor.appendBlockInPage(page.uuid, result);
+    const insertBlock = await logseq.Editor.appendBlockInPage(
+      page.uuid,
+      result
+    );
 
     if (openAISettings.injectPrefix && result.length == 0) {
       result = openAISettings.injectPrefix + result;
     }
 
-    await openAIWithStream(pageContents, openAISettings,  async (content: string) => {
-      result += content || "";
-      if(null != insertBlock) {
-        await logseq.Editor.updateBlock(insertBlock.uuid, result);
-      }
-    }, () => {});
+    await openAIWithStream(
+      pageContents,
+      openAISettings,
+      async (content: string) => {
+        result += content || "";
+        if (null != insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+      },
+      () => {}
+    );
     if (!result) {
-      logseq.App.showMsg("No OpenAI content" , "warning");
+      logseq.App.showMsg("No OpenAI content", "warning");
       return;
     }
-
   } catch (e: any) {
     handleOpenAIError(e);
   }
 }
 
-
-
-// 该版拼接正确，但不断有浮窗产生  
-  /* export async function runGptsID(b: IHookEvent, gptsID: string) {
-    const openAISettings = getOpenaiSettings();
-    validateSettings(openAISettings);
-  
-    const currentBlock = await logseq.Editor.getBlock(b.uuid);
-    if (!currentBlock) {
-      console.error("No current block");
-      return;
-    }
-  
-    if (currentBlock.content.trim().length === 0) {
-      logseq.App.showMsg("Empty Content", "warning");
-      console.warn("Blank page");
-      return;
-    }
-  
-    try {
-      let result = "";
-      const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
-        sibling: false,
-      });
-  
-      if (openAISettings.injectPrefix && result.length === 0) {
-        result = openAISettings.injectPrefix + result;
-      }
-  
-      // 将 gptsID 作为参数传递给 openAIWithStreamGptsID
-      await openAIWithStreamGptsID(currentBlock.content, { ...openAISettings, gpts: gptsID }, async (content: string) => {
-        result += content || "";
-        if (insertBlock) {
-          await logseq.Editor.updateBlock(insertBlock.uuid, result);
-        }
-      }, () => {});
-  
-      if (!result) {
-        logseq.App.showMsg("No OpenAI content", "warning");
-        return;
-      }
-    } catch (e: any) {
-      handleOpenAIError(e);
-    }
-  } */
-
-
-export async function runGptsID(b: IHookEvent, gptsID: string, commandName: string) {
+export async function runGptsID(
+  b: IHookEvent,
+  gptsID: string,
+  commandName: string
+) {
   // 获取用户在设置窗口中自定义的值；此前在main.tsx中已经通过logseq.useSettingsSchema(settingsSchema);进行了插件初始化时的默认设置
   const openAISettings = getOpenaiSettings();
   validateSettings(openAISettings);
@@ -318,9 +310,13 @@ export async function runGptsID(b: IHookEvent, gptsID: string, commandName: stri
 
   try {
     let result = "";
-    const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
-      sibling: false,
-    });
+    const insertBlock = await logseq.Editor.insertBlock(
+      currentBlock.uuid,
+      result,
+      {
+        sibling: false,
+      }
+    );
 
     const newPrefix = `OpenAI GPTs：${commandName}\n`; // 新增：构建新的前缀
     if (openAISettings.injectPrefix && result.length === 0) {
@@ -329,12 +325,17 @@ export async function runGptsID(b: IHookEvent, gptsID: string, commandName: stri
       result = newPrefix; // 如果没有现有前缀，直接使用新前缀
     }
     // gpts: gptsID 会覆盖 openAISettings 中同名的属性。
-    await openAIWithStreamGptsID(currentBlock.content, { ...openAISettings, gpts: gptsID }, async (content: string) => {
-      result += content || "";
-      if (insertBlock) {
-        await logseq.Editor.updateBlock(insertBlock.uuid, result);
-      }
-    }, () => {});
+    await openAIWithStreamGptsID(
+      currentBlock.content,
+      { ...openAISettings, gpts: gptsID },
+      async (content: string) => {
+        result += content || "";
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+      },
+      () => {}
+    );
 
     if (!result) {
       logseq.App.showMsg("No OpenAI content", "warning");
@@ -346,8 +347,13 @@ export async function runGptsID(b: IHookEvent, gptsID: string, commandName: stri
   }
 }
 
+// 新增函数1 for gpts-toml
+function parseImageSizeFromPrompt(prompt: string): string | null {
+  const match = prompt.match(/(1024x1024|720x1280|1280x720)/);
+  return match ? match[0] : null;
+}
 
-// 新增：创建运行 prompts-gpts.toml 命令的处理函数
+// 新增函数2 for gpts-toml
 /* export async function createRunGptsTomlCommand(command: Command) {
   return async (b: IHookEvent) => {
     const openAISettings = getOpenaiSettings();
@@ -367,33 +373,82 @@ export async function runGptsID(b: IHookEvent, gptsID: string, commandName: stri
 
     try {
       let result = "";
-      const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
-        sibling: false,
-      });
+      let pendingImagePrompts = new Map<string, string>();
 
-      const newPrefix = `${command.name}\n`; // 构建新的前缀
+      const insertBlock = await logseq.Editor.insertBlock(
+        currentBlock.uuid,
+        result,
+        {
+          sibling: false,
+        }
+      );
+
+      const newPrefix = `${command.name}\n`;
       if (openAISettings.injectPrefix && result.length === 0) {
-        result = openAISettings.injectPrefix + newPrefix; // 将新前缀加入到现有前缀之后
+        result = openAISettings.injectPrefix + newPrefix;
       } else {
-        result = newPrefix; // 如果没有现有前缀，直接使用新前缀
+        result = newPrefix;
       }
 
-      // 调用 openAIWithStream 进行处理
       const finalPrompt = command.prompt + currentBlock.content;
-      const streamResult = await openAIWithStream(finalPrompt, openAISettings, async (content: string) => {
-        result += content || "";
+      const imageSize = parseImageSizeFromPrompt(finalPrompt) || "1024x1024";
+
+      const onContent = async (content: string) => {
+        result += content;
         if (insertBlock) {
           await logseq.Editor.updateBlock(insertBlock.uuid, result);
         }
-      }, () => {});
+      };
 
-      if (streamResult) {
-        result += streamResult;
-      }
+      const onImagePrompt = async (imagePrompt: string) => {
+        // console.log(`Image Prompt: ${imagePrompt}`);
+        const placeholder = "为该段落绘图中，请稍后...\n";
+        pendingImagePrompts.set(imagePrompt, placeholder);
+
+        const imageUrl = await dallE_gptsToml(
+          imagePrompt,
+          openAISettings,
+          imageSize
+        );
+        if ("url" in imageUrl) {
+          // 修改图片输出格式，增加图片显示
+          const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+          // 替换对应段落的占位符
+          result = result.replace(placeholder, imageMarkdown);
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+          pendingImagePrompts.delete(imagePrompt);
+        } else {
+          console.error("Failed to generate image:", imageUrl.error);
+          // 删除失败的图片生成提示并添加额外换行
+          result = result.replace(placeholder, "\n");
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+          pendingImagePrompts.delete(imagePrompt);
+        }
+      };
+
+      const onStop = () => {
+        console.log("Processing completed.");
+      };
+
+      await openAIWithStreamGptsToml(
+        finalPrompt,
+        openAISettings,
+        onContent,
+        onImagePrompt,
+        onStop
+      );
 
       if (!result) {
         logseq.App.showMsg("No OpenAI content", "warning");
         return;
+      }
+
+      if (insertBlock) {
+        await logseq.Editor.updateBlock(insertBlock.uuid, result);
       }
     } catch (e: any) {
       console.error("Error in runGptsCommand:", e);
@@ -402,15 +457,673 @@ export async function runGptsID(b: IHookEvent, gptsID: string, commandName: stri
   };
 } */
 
+// 已经可以输出文本和图片了，但依然有异常提醒
+/*  export async function createRunGptsTomlCommand(command: Command) {
+    return async (b: IHookEvent) => {
+      const openAISettings = getOpenaiSettings();
+      validateSettings(openAISettings);
+  
+      const currentBlock = await logseq.Editor.getBlock(b.uuid);
+      if (!currentBlock) {
+        console.error("No current block");
+        return;
+      }
+  
+      if (currentBlock.content.trim().length === 0) {
+        logseq.App.showMsg("Empty Content", "warning");
+        console.warn("Blank page");
+        return;
+      }
+  
+      try {
+        let result = "";
+        let pendingImagePrompts = new Map<string, string>();
+  
+        const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
+          sibling: false,
+        });
+  
+        const finalPrompt = command.prompt + currentBlock.content;
+        const imageSize = parseImageSizeFromPrompt(finalPrompt) || "1024x1024";
+  
+        // 用于收集 OpenAI 返回的完整响应
+        let fullResponse = "";
+  
+        const onContent = async (content: string) => {
+          result += content;
+          fullResponse += content; // 收集完整响应
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+        };
+  
+        const onImagePrompt = async (imagePrompt: string) => {
+          const placeholder = "为该段落绘图中，请稍后...\n";
+          pendingImagePrompts.set(imagePrompt, placeholder);
+  
+          const imageUrl = await dallE_gptsToml(imagePrompt, openAISettings, imageSize);
+          if ("url" in imageUrl) {
+            const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+            result = result.replace(placeholder, imageMarkdown);
+            if (insertBlock) {
+              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+            }
+            pendingImagePrompts.delete(imagePrompt);
+          } else {
+            console.error("Failed to generate image:", imageUrl.error);
+            result = result.replace(placeholder, "\n");
+            if (insertBlock) {
+              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+            }
+            pendingImagePrompts.delete(imagePrompt);
+          }
+        };
+  
+        const onStop = async () => {
+          console.log("Processing completed.");
+  
+          // OpenAI 响应完成后，检查是否包含 JSON 对象
+          const jsonMatch = fullResponse.match(/```json\s*([\s\S]*?)```/);
+          if (jsonMatch) {
+            // 处理直接绘图的情况（Prompt 2）
+            let jsonString = jsonMatch[1].trim();
+  
+            // **预处理 JSON 字符串**
+  
+            // 1. 移除控制字符
+            jsonString = jsonString.replace(/[\b\f\n\r\t]/g, '');
+  
+            // 2. 移除多余的引号或反引号
+            jsonString = jsonString.replace(/'''/g, '').trim();
+  
+            // 3. 确保属性名和字符串值使用双引号
+            jsonString = jsonString.replace(/(\w+):/g, '"$1":').replace(/'/g, '"');
+  
+            console.log("Processed JSON String:", jsonString);
+  
+            // 解析 JSON 字符串
+            let promptObj;
+            try {
+              promptObj = JSON.parse(jsonString);
+            } catch (error) {
+              console.error("Error parsing JSON:", error);
+              logseq.App.showMsg("Error: Invalid JSON format in OpenAI response.", "error");
+              return;
+            }
+  
+            const n = promptObj.n || 1; // 默认生成 1 张图片
+            const imageSize = promptObj.size || "1024x1024";
+            let promptText = promptObj.prompt;
+  
+            // **控制 DALL·E 提示词长度**
+            const maxPromptLength = 1000; // 根据 OpenAI API 的实际限制设置
+  
+            if (promptText.length > maxPromptLength) {
+              promptText = promptText.substring(0, maxPromptLength);
+              console.warn(`Prompt length exceeds maximum allowed. Truncated to ${maxPromptLength} characters.`);
+            }
+  
+            // 生成 n 张图片
+            for (let i = 0; i < n; i++) {
+              const placeholder = `正在生成第 ${i + 1} 张图片，请稍后...\n`;
+              result += placeholder;
+              if (insertBlock) {
+                await logseq.Editor.updateBlock(insertBlock.uuid, result);
+              }
+  
+              const imageUrl = await dallE_gptsToml(promptText, openAISettings, imageSize);
+              if ("url" in imageUrl) {
+                const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+                result = result.replace(placeholder, imageMarkdown);
+                if (insertBlock) {
+                  await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                }
+              } else {
+                console.error("Failed to generate image:", imageUrl.error);
+                result = result.replace(placeholder, "图片生成失败\n");
+                if (insertBlock) {
+                  await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                }
+              }
+            }
+          }
+        };
+  
+        await openAIWithStreamGptsToml(finalPrompt, openAISettings, onContent, onImagePrompt, onStop);
+  
+        if (!result) {
+          logseq.App.showMsg("No OpenAI content", "warning");
+          return;
+        }
+  
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+      } catch (error) {
+        console.error("Error in createRunGptsTomlCommand:", error);
+        logseq.App.showMsg("Error processing command", "error");
+      }
+    };
+  }  */
 
-// 新增函数1 for gpts-toml
-function parseImageSizeFromPrompt(prompt: string): string | null {
-  const match = prompt.match(/(1024x1024|720x1280|1280x720)/);
-  return match ? match[0] : null;
-}
+// 每次总是生成4张图片，3次测试 2次有问题
+/* export async function createRunGptsTomlCommand(command: Command) {
+  return async (b: IHookEvent) => {
+    const openAISettings = getOpenaiSettings();
+    validateSettings(openAISettings);
 
-// 新增函数2 for gpts-toml
-// 优化后的 createRunGptsTomlCommand 函数
+    const currentBlock = await logseq.Editor.getBlock(b.uuid);
+    if (!currentBlock) {
+      console.error("No current block");
+      return;
+    }
+
+    if (currentBlock.content.trim().length === 0) {
+      logseq.App.showMsg("Empty Content", "warning");
+      console.warn("Blank page");
+      return;
+    }
+
+    try {
+      let result = "";
+      let pendingImagePrompts = new Map<string, string>();
+
+      const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
+        sibling: false,
+      });
+
+      const finalPrompt = command.prompt + currentBlock.content;
+      const imageSize = parseImageSizeFromPrompt(finalPrompt) || "1024x1024";
+
+      // 收集完整响应
+      let fullResponse = "";
+
+      const onContent = async (content: string) => {
+        result += content;
+        fullResponse += content;
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+      };
+
+      const onImagePrompt = async (imagePrompt: string) => {
+        const placeholder = "为该段落绘图中，请稍后...\n";
+        pendingImagePrompts.set(imagePrompt, placeholder);
+
+        // 检查并限制prompt长度
+        const maxPromptLength = 1000;
+        let truncatedPrompt = imagePrompt;
+        if (imagePrompt.length > maxPromptLength) {
+          truncatedPrompt = imagePrompt.substring(0, maxPromptLength);
+          console.warn(`Prompt length truncated to ${maxPromptLength} characters.`);
+        }
+
+        const imageUrl = await dallE_gptsToml(truncatedPrompt, openAISettings, imageSize);
+        if ("url" in imageUrl) {
+          const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+          result = result.replace(placeholder, imageMarkdown);
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+          pendingImagePrompts.delete(imagePrompt);
+        } else {
+          console.error("Failed to generate image:", imageUrl.error);
+          result = result.replace(placeholder, "\n");
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+          pendingImagePrompts.delete(imagePrompt);
+        }
+      };
+
+      const onStop = async () => {
+        console.log("Processing completed.");
+
+        try {
+          // 尝试处理JSON响应
+          const jsonMatch = fullResponse.match(/```json\s*([\s\S]*?)```/);
+          if (jsonMatch) {
+            let jsonString = jsonMatch[1].trim();
+            
+            // 预处理JSON字符串
+            jsonString = jsonString
+              .replace(/[\b\f\n\r\t]/g, ' ') // 替换控制字符为空格
+              .replace(/\\n/g, ' ') // 替换转义的换行符
+              .replace(/\s+/g, ' ') // 合并多个空格
+              .replace(/(\w+):/g, '"$1":') // 确保属性名使用双引号
+              .replace(/'/g, '"') // 将单引号替换为双引号
+              .trim();
+
+            console.log("Processed JSON String:", jsonString);
+
+            let promptObj;
+            try {
+              promptObj = JSON.parse(jsonString);
+              
+              // 验证并处理prompt对象
+              if (promptObj && typeof promptObj === 'object') {
+                const { prompt, size = "1024x1024", n = 1 } = promptObj;
+                
+                // 限制prompt长度
+                const maxPromptLength = 1000;
+                let processedPrompt = prompt;
+                if (prompt.length > maxPromptLength) {
+                  processedPrompt = prompt.substring(0, maxPromptLength);
+                  console.warn(`Prompt truncated to ${maxPromptLength} characters`);
+                }
+
+                // 生成指定数量的图片
+                for (let i = 0; i < n; i++) {
+                  const placeholder = `正在生成第 ${i + 1} 张图片，请稍后...\n`;
+                  result += placeholder;
+                  if (insertBlock) {
+                    await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                  }
+
+                  const imageUrl = await dallE_gptsToml(processedPrompt, openAISettings, size);
+                  if ("url" in imageUrl) {
+                    const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+                    result = result.replace(placeholder, imageMarkdown);
+                    if (insertBlock) {
+                      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                    }
+                  } else {
+                    console.error("Failed to generate image:", imageUrl.error);
+                    result = result.replace(placeholder, "图片生成失败\n");
+                    if (insertBlock) {
+                      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                    }
+                  }
+                }
+              }
+            } catch (parseError) {
+              console.error("Error parsing JSON:", parseError);
+              // JSON解析失败时，继续使用常规文本处理方式
+              await handleRegularTextResponse();
+            }
+          } else {
+            // 如果不是JSON响应，使用常规文本处理方式
+            await handleRegularTextResponse();
+          }
+        } catch (error) {
+          console.error("Error in onStop:", error);
+          logseq.App.showMsg("Error processing response", "error");
+        }
+      };
+
+      // 处理常规文本响应的辅助函数
+      const handleRegularTextResponse = async () => {
+        // 保持原有的文本处理逻辑不变
+        if (!result) {
+          logseq.App.showMsg("No OpenAI content", "warning");
+          return;
+        }
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+      };
+
+      await openAIWithStreamGptsToml(finalPrompt, openAISettings, onContent, onImagePrompt, onStop);
+
+    } catch (error) {
+      console.error("Error in createRunGptsTomlCommand:", error);
+      logseq.App.showMsg("Error processing command", "error");
+    }
+  };
+} */
+
+// 两次测试，都生成4幅图片，但无任何错误提醒
+/*   export async function createRunGptsTomlCommand(command: Command) {
+    return async (b: IHookEvent) => {
+      const openAISettings = getOpenaiSettings();
+      validateSettings(openAISettings);
+  
+      const currentBlock = await logseq.Editor.getBlock(b.uuid);
+      if (!currentBlock) {
+        console.error("No current block");
+        return;
+      }
+  
+      if (currentBlock.content.trim().length === 0) {
+        logseq.App.showMsg("Empty Content", "warning");
+        console.warn("Blank page");
+        return;
+      }
+  
+      try {
+        let result = "";
+        let pendingImagePrompts = new Map<string, string>();
+  
+        const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
+          sibling: false,
+        });
+  
+        const finalPrompt = command.prompt + currentBlock.content;
+        const imageSize = parseImageSizeFromPrompt(finalPrompt) || "1024x1024";
+  
+        // 收集完整响应
+        let fullResponse = "";
+  
+        const onContent = async (content: string) => {
+          result += content;
+          fullResponse += content;
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+        };
+  
+        const onImagePrompt = async (imagePrompt: string) => {
+          const placeholder = "为该段落绘图中，请稍后...\n";
+          pendingImagePrompts.set(imagePrompt, placeholder);
+  
+          // 检查并限制prompt长度
+          const maxPromptLength = 1000;
+          let truncatedPrompt = imagePrompt;
+          if (imagePrompt.length > maxPromptLength) {
+            truncatedPrompt = imagePrompt.substring(0, maxPromptLength);
+            console.warn(`Prompt length truncated to ${maxPromptLength} characters.`);
+          }
+  
+          const imageUrl = await dallE_gptsToml(truncatedPrompt, openAISettings, imageSize);
+          if ("url" in imageUrl) {
+            const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+            result = result.replace(placeholder, imageMarkdown);
+            if (insertBlock) {
+              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+            }
+            pendingImagePrompts.delete(imagePrompt);
+          } else {
+            console.error("Failed to generate image:", imageUrl.error);
+            result = result.replace(placeholder, "\n");
+            if (insertBlock) {
+              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+            }
+            pendingImagePrompts.delete(imagePrompt);
+          }
+        };
+  
+        const onStop = async () => {
+          console.log("Processing completed.");
+  
+          try {
+            // 尝试处理JSON响应
+            const jsonMatch = fullResponse.match(/```json\s*([\s\S]*?)```/);
+            if (jsonMatch) {
+              let jsonString = jsonMatch[1].trim();
+  
+              // 预处理JSON字符串
+              jsonString = jsonString
+                .replace(/[\b\f\n\r\t]/g, ' ') // 替换控制字符为空格
+                .replace(/\\n/g, ' ') // 替换转义的换行符
+                .replace(/\s+/g, ' ') // 合并多个空格
+                .replace(/(\w+):/g, '"$1":') // 确保属性名使用双引号
+                .replace(/'/g, '"') // 将单引号替换为双引号
+                .trim();
+  
+              console.log("Processed JSON String:", jsonString);
+  
+              let promptObj;
+              try {
+                promptObj = JSON.parse(jsonString);
+  
+                // 验证并处理prompt对象
+                if (promptObj && typeof promptObj === 'object') {
+                  const { prompt, size = "1024x1024", n = 1 } = promptObj;
+  
+                  // 限制prompt长度
+                  const maxPromptLength = 1000;
+                  let processedPrompt = prompt;
+                  if (prompt.length > maxPromptLength) {
+                    processedPrompt = prompt.substring(0, maxPromptLength);
+                    console.warn(`Prompt truncated to ${maxPromptLength} characters`);
+                  }
+  
+                  // 生成指定数量的图片
+                  for (let i = 0; i < n; i++) {
+                    const placeholder = `正在生成第 ${i + 1} 张图片，请稍后...\n`;
+                    result += placeholder;
+                    if (insertBlock) {
+                      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                    }
+  
+                    const imageUrl = await dallE_gptsToml(processedPrompt, openAISettings, size);
+                    if ("url" in imageUrl) {
+                      const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+                      result = result.replace(placeholder, imageMarkdown);
+                      if (insertBlock) {
+                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                      }
+                    } else {
+                      console.error("Failed to generate image:", imageUrl.error);
+                      result = result.replace(placeholder, "图片生成失败\n");
+                      if (insertBlock) {
+                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                      }
+                    }
+                  }
+                }
+              } catch (parseError) {
+                console.error("Error parsing JSON:", parseError);
+                // JSON解析失败时，继续使用常规文本处理方式
+                await handleRegularTextResponse();
+              }
+            } else {
+              // 如果不是JSON响应，使用常规文本处理方式
+              await handleRegularTextResponse();
+            }
+          } catch (error) {
+            console.error("Error in onStop:", error);
+            logseq.App.showMsg("Error processing response", "error");
+          }
+        };
+  
+        // 处理常规文本响应的辅助函数
+        const handleRegularTextResponse = async () => {
+          // 保持原有的文本处理逻辑不变
+          if (!result) {
+            logseq.App.showMsg("No OpenAI content", "warning");
+            return;
+          }
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+        };
+  
+        await openAIWithStreamGptsToml(finalPrompt, openAISettings, onContent, onImagePrompt, onStop);
+  
+      } catch (error) {
+        console.error("Error in createRunGptsTomlCommand:", error);
+        logseq.App.showMsg("Error processing command", "error");
+      }
+    };
+  } */
+
+//claude 更新：除了“第1幅图”等略有瑕疵，“为该段落绘图中，请稍后...”没有删除之外，其他还好
+/*  export async function createRunGptsTomlCommand(command: Command) {
+      return async (b: IHookEvent) => {
+        const openAISettings = getOpenaiSettings();
+        validateSettings(openAISettings);
+    
+        const currentBlock = await logseq.Editor.getBlock(b.uuid);
+        if (!currentBlock) {
+          console.error("No current block");
+          return;
+        }
+    
+        if (currentBlock.content.trim().length === 0) {
+          logseq.App.showMsg("Empty Content", "warning");
+          console.warn("Blank page");
+          return;
+        }
+    
+        try {
+          let result = "";
+          let pendingImagePrompts = new Map<string, string>();
+    
+          const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
+            sibling: false,
+          });
+    
+          const finalPrompt = command.prompt + currentBlock.content;
+          const imageSize = parseImageSizeFromPrompt(finalPrompt) || "1024x1024";
+    
+          // 收集完整响应
+          let fullResponse = "";
+    
+          const onContent = async (content: string) => {
+            result += content;
+            fullResponse += content;
+            if (insertBlock) {
+              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+            }
+          };
+    
+          const onImagePrompt = async (imagePrompt: string) => {
+            const placeholder = "为该段落绘图中，请稍后...\n";
+            pendingImagePrompts.set(imagePrompt, placeholder);
+    
+            const truncatedPrompt = truncatePrompt(imagePrompt);
+            const imageUrl = await dallE_gptsToml(truncatedPrompt, openAISettings, imageSize);
+            await handleImageResponse(imageUrl, imagePrompt, placeholder, pendingImagePrompts, result, insertBlock);
+          };
+    
+          const onStop = async () => {
+            console.log("Processing completed.");
+    
+            try {
+              // 处理JSON响应（场景2的处理逻辑）
+              const jsonMatch = fullResponse.match(/```json\s*([\s\S]*?)```/);
+              if (jsonMatch) {
+                const processedJson = await handleJsonResponse(jsonMatch[1], openAISettings, result, insertBlock);
+                if (processedJson.success) {
+                  result = processedJson.result;
+                  return;
+                }
+              }
+    
+              // 如果不是JSON响应，使用常规文本处理方式（场景1的处理逻辑）
+              await handleRegularTextResponse(result, insertBlock);
+            } catch (error) {
+              console.error("Error in onStop:", error);
+              logseq.App.showMsg("Error processing response", "error");
+            }
+          };
+    
+          await openAIWithStreamGptsToml(finalPrompt, openAISettings, onContent, onImagePrompt, onStop);
+    
+        } catch (error) {
+          console.error("Error in createRunGptsTomlCommand:", error);
+          logseq.App.showMsg("Error processing command", "error");
+        }
+      };
+    } */
+
+// 新增：处理JSON响应的函数
+/*   async function handleJsonResponse(
+      jsonString: string,
+      openAISettings: OpenAIOptions,
+      result: string,
+      insertBlock: any
+    ): Promise<{ success: boolean; result: string }> {
+      const processedJson = processJsonString(jsonString);
+      
+      try {
+        const promptObj = JSON.parse(processedJson);
+        if (promptObj && typeof promptObj === 'object') {
+          const { prompt, size = "1024x1024", n = 1 } = promptObj;
+    
+          // 处理场景2的多场景绘制
+          for (let i = 1; i <= n; i++) {
+            const scenePrompt = `${prompt}\n\n**当前绘制**：第${i}幅`;
+            const placeholder = `正在生成第 ${i} 张图片，请稍后...\n`;
+            result += placeholder;
+            
+            if (insertBlock) {
+              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+            }
+    
+            const truncatedPrompt = truncatePrompt(scenePrompt);
+            const imageUrl = await dallE_gptsToml(truncatedPrompt, openAISettings, size);
+            
+            if ("url" in imageUrl) {
+              const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+              result = result.replace(placeholder, imageMarkdown);
+              if (insertBlock) {
+                await logseq.Editor.updateBlock(insertBlock.uuid, result);
+              }
+            } else {
+              console.error("Failed to generate image:", imageUrl.error);
+              result = result.replace(placeholder, "图片生成失败\n");
+              if (insertBlock) {
+                await logseq.Editor.updateBlock(insertBlock.uuid, result);
+              }
+            }
+          }
+          return { success: true, result };
+        }
+      } catch (error) {
+        console.error("Error processing JSON response:", error);
+      }
+      return { success: false, result };
+    } */
+
+// 新增：处理常规文本响应的函数
+/*   async function handleRegularTextResponse(result: string, insertBlock: any) {
+      if (!result) {
+        logseq.App.showMsg("No OpenAI content", "warning");
+        return;
+      }
+      if (insertBlock) {
+        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+      }
+    } */
+
+// 新增：处理图片响应的函数
+/*   async function handleImageResponse(
+      imageUrl: { url: string } | { error: string },
+      imagePrompt: string,
+      placeholder: string,
+      pendingImagePrompts: Map<string, string>,
+      result: string,
+      insertBlock: any
+    ) {
+      if ("url" in imageUrl) {
+        const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+        result = result.replace(placeholder, imageMarkdown);
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+        pendingImagePrompts.delete(imagePrompt);
+      } else {
+        console.error("Failed to generate image:", imageUrl.error);
+        result = result.replace(placeholder, "\n");
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+        pendingImagePrompts.delete(imagePrompt);
+      }
+    } */
+
+// 新增：处理和清理JSON字符串的函数
+/*    function processJsonString(jsonString: string): string {
+      return jsonString
+        .replace(/[\b\f\n\r\t]/g, ' ')
+        .replace(/\\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/(\w+):/g, '"$1":')
+        .replace(/'/g, '"')
+        .trim();
+    } */
+
+// 新增：截断提示词的函数
+/*    function truncatePrompt(prompt: string, maxLength: number = 1000): string {
+      if (prompt.length > maxLength) {
+        console.warn(`Prompt length truncated to ${maxLength} characters.`);
+        return prompt.substring(0, maxLength);
+      }
+      return prompt;
+    } */
+
 export async function createRunGptsTomlCommand(command: Command) {
   return async (b: IHookEvent) => {
     const openAISettings = getOpenaiSettings();
@@ -431,38 +1144,55 @@ export async function createRunGptsTomlCommand(command: Command) {
     try {
       let result = "";
       let pendingImagePrompts = new Map<string, string>();
-      
-      const insertBlock = await logseq.Editor.insertBlock(currentBlock.uuid, result, {
-        sibling: false,
-      });
 
-      const newPrefix = `${command.name}\n`;
-      if (openAISettings.injectPrefix && result.length === 0) {
-        result = openAISettings.injectPrefix + newPrefix;
-      } else {
-        result = newPrefix;
-      }
+      const insertBlock = await logseq.Editor.insertBlock(
+        currentBlock.uuid,
+        result,
+        {
+          sibling: false,
+        }
+      );
 
       const finalPrompt = command.prompt + currentBlock.content;
-      const imageSize = parseImageSizeFromPrompt(finalPrompt) || '1024x1024';
+      const imageSize = parseImageSizeFromPrompt(finalPrompt) || "1024x1024";
+
+      // 收集完整响应
+      let fullResponse = "";
 
       const onContent = async (content: string) => {
         result += content;
+        fullResponse += content;
         if (insertBlock) {
           await logseq.Editor.updateBlock(insertBlock.uuid, result);
         }
       };
 
+      // 判断是否为"提示词2"类型的命令
+      const isColoringBookCommand = command.type === "Coloring_Book_Hero2";
+
       const onImagePrompt = async (imagePrompt: string) => {
-        console.log(`Image Prompt: ${imagePrompt}`);
+        // 如果是提示词2类型，则跳过常规图片生成流程
+        if (isColoringBookCommand) return;
+
         const placeholder = "为该段落绘图中，请稍后...\n";
         pendingImagePrompts.set(imagePrompt, placeholder);
-        
-        const imageUrl = await dallE_gptsToml(imagePrompt, openAISettings, imageSize);
-        if ('url' in imageUrl) {
-          // 修改图片输出格式，增加图片显示
+
+        const maxPromptLength = 1000;
+        let truncatedPrompt = imagePrompt;
+        if (imagePrompt.length > maxPromptLength) {
+          truncatedPrompt = imagePrompt.substring(0, maxPromptLength);
+          console.warn(
+            `Prompt length truncated to ${maxPromptLength} characters.`
+          );
+        }
+
+        const imageUrl = await dallE_gptsToml(
+          truncatedPrompt,
+          openAISettings,
+          imageSize
+        );
+        if ("url" in imageUrl) {
           const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
-          // 替换对应段落的占位符
           result = result.replace(placeholder, imageMarkdown);
           if (insertBlock) {
             await logseq.Editor.updateBlock(insertBlock.uuid, result);
@@ -470,7 +1200,6 @@ export async function createRunGptsTomlCommand(command: Command) {
           pendingImagePrompts.delete(imagePrompt);
         } else {
           console.error("Failed to generate image:", imageUrl.error);
-          // 删除失败的图片生成提示并添加额外换行
           result = result.replace(placeholder, "\n");
           if (insertBlock) {
             await logseq.Editor.updateBlock(insertBlock.uuid, result);
@@ -479,45 +1208,110 @@ export async function createRunGptsTomlCommand(command: Command) {
         }
       };
 
-
-      const onStop = () => {
+      const onStop = async () => {
         console.log("Processing completed.");
+
+        try {
+          const jsonMatch = fullResponse.match(/```json\s*([\s\S]*?)```/);
+          if (jsonMatch && isColoringBookCommand) {
+            let jsonString = jsonMatch[1].trim();
+
+            // 预处理JSON字符串
+            jsonString = jsonString
+              .replace(/[\b\f\n\r\t]/g, " ")
+              .replace(/\\n/g, " ")
+              .replace(/\s+/g, " ")
+              .replace(/(\w+):/g, '"$1":')
+              .replace(/'/g, '"')
+              .trim();
+
+            console.log("Processed JSON String:", jsonString);
+
+            try {
+              let promptObj = JSON.parse(jsonString);
+
+              if (promptObj && typeof promptObj === "object") {
+                const { prompt, size = "1024x1024", n = 1 } = promptObj;
+
+                // 对每个场景分别生成图片
+                for (let i = 1; i <= n; i++) {
+                  const scenePrompt = {
+                    prompt: `${prompt}\n\n**当前绘制**：第${i}幅`,
+                    n: 1,
+                    size: size,
+                    response_format: "url",
+                    model: openAISettings.dalleModel,
+                  };
+
+                  const placeholder = `正在生成第 ${i} 张图片，请稍后...\n`;
+                  result += placeholder;
+                  if (insertBlock) {
+                    await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                  }
+
+                  // 调用绘图函数生成当前场景
+                  const imageUrl = await dallE_gptsToml(
+                    scenePrompt.prompt,
+                    openAISettings,
+                    size
+                  );
+                  if ("url" in imageUrl) {
+                    const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
+                    result = result.replace(placeholder, imageMarkdown);
+                    if (insertBlock) {
+                      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                    }
+                  } else {
+                    console.error("Failed to generate image:", imageUrl.error);
+                    result = result.replace(placeholder, "图片生成失败\n");
+                    if (insertBlock) {
+                      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                    }
+                  }
+                }
+              }
+            } catch (parseError) {
+              console.error("Error parsing JSON:", parseError);
+              await handleRegularTextResponse();
+            }
+          } else {
+            await handleRegularTextResponse();
+          }
+        } catch (error) {
+          console.error("Error in onStop:", error);
+          logseq.App.showMsg("Error processing response", "error");
+        }
       };
 
-      await openAIWithStreamGptsToml(finalPrompt, openAISettings, onContent, onImagePrompt, onStop);
+      // 处理常规文本响应的辅助函数
+      const handleRegularTextResponse = async () => {
+        if (!result) {
+          logseq.App.showMsg("No OpenAI content", "warning");
+          return;
+        }
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
+      };
 
-      if (!result) {
-        logseq.App.showMsg("No OpenAI content", "warning");
-        return;
-      }
-
-      if (insertBlock) {
-        await logseq.Editor.updateBlock(insertBlock.uuid, result);
-      }
-    } catch (e: any) {
-      console.error("Error in runGptsCommand:", e);
-      handleOpenAIError(e);
+      await openAIWithStreamGptsToml(
+        finalPrompt,
+        openAISettings,
+        onContent,
+        onImagePrompt,
+        onStop
+      );
+    } catch (error) {
+      console.error("Error in createRunGptsTomlCommand:", error);
+      logseq.App.showMsg("Error processing command", "error");
     }
   };
 }
-
-
-
-
-
-
-
 
 /* const updateBlock = async (uuid: string, content: string) => {
   await logseq.Editor.updateBlock(uuid, content);
   // console.log(`Updated block with UUID: ${uuid}`);
 }; */
-
-
-
-
-
-
 
 export async function runDalleBlock(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
@@ -570,7 +1364,6 @@ export async function runWhisper(b: IHookEvent) {
   }
 }
 
-
 //test增加
 
 export async function runReadImageURL(b: IHookEvent) {
@@ -585,7 +1378,8 @@ export async function runReadImageURL(b: IHookEvent) {
     const openAISettings = getOpenaiSettings();
 
     // 判断是远程图片链接还是本地图片路径
-    const isRemoteUrl = imageUrl.startsWith("http://") || imageUrl.startsWith("https://");
+    const isRemoteUrl =
+      imageUrl.startsWith("http://") || imageUrl.startsWith("https://");
 
     try {
       let description: string | null = null;
@@ -606,6 +1400,3 @@ export async function runReadImageURL(b: IHookEvent) {
     }
   }
 }
-
-
-

@@ -12,6 +12,7 @@ import { SuccessResult } from "./components/SuccessResult";
 export interface Command {
   type: string;
   name: string;
+  isParseJson: string;
   prompt: string;
   temperature?: number;
   shortcut?: string;

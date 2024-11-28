@@ -54,6 +54,7 @@ export async function loadUserCommands() {
       customCommands.push({
         type: type,
         name: type,
+        isParseJson: type,
         temperature: Number(result[0].properties["prompt-temperature"]),
         prompt: prompt,
       });
@@ -65,6 +66,7 @@ export async function loadUserCommands() {
 
 interface Prompt {
   name: string;
+  isParseJson: string;
   temperature: number;
   description: string;
   prompt: string;
@@ -76,6 +78,7 @@ function promptsToCommands(prompts: Prompts): Command[] {
     return {
       type: name,
       name: prompt.name,
+      isParseJson: prompt.isParseJson,
       description: prompt.description,
       prompt: prompt.prompt,
       temperature: prompt.temperature,

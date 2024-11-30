@@ -144,4 +144,8 @@ export async function getImageUrlFromBlock(content: string): Promise<string | nu
   return null;
 }
 
+export const showMessage = (message: string, status: 'success' | 'warning' | 'error' = 'success') => {
+  logseq.UI.showMsg(message, status);
+};
+
 

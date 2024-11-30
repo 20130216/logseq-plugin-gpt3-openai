@@ -1,157 +1,224 @@
 import { SettingSchemaDesc } from "@logseq/libs/dist/LSPlugin";
-import { DalleImageSize, OpenAIOptions } from "./openai";
+import { DalleImageSize, DalleModel, DalleQuality, DalleStyle, OpenAIOptions } from "./openai";
 
 interface PluginOptions extends OpenAIOptions {
+  openAIKey: string;
+  openAICompletionEngine: string;
+  chatCompletionEndpoint: string;
+  gpts?: string;
+  chatPrompt?: string;
+  openAITemperature?: number;
+  openAIMaxTokens?: number;
+  dalleImageSize?: DalleImageSize;
+  dalleModel?: DalleModel;
+  dalleQuality?: DalleQuality;
+  dalleStyle?: DalleStyle;
+  shortcutBlock?: string;
+  popupShortcut?: string;
   injectPrefix?: string;
+  customHeaders?: string;
+  disabled?: boolean;
+  useProxy?: boolean;
+  proxyEndpoint?: string;
 }
-// 插件初始化时的默认设置；settingsSchema 中的默认值会在用户输入新值后被覆盖
-// 后端定义的数据结构（例如 SettingSchemaDesc[]）可以直接用于前端 UI 的生成，从而实现自动生成表格的功能。
+
+// 将字符串中的 \n 转换为实际换行符
+function unescapeNewlines(s: string) {
+  return s.replace(/\\n/g, "\n");
+}
+
+// 插件设置的 schema 定义
 export const settingsSchema: SettingSchemaDesc[] = [
   {
     key: "openAIKey",
     type: "string",
     default: "",
-    title: "填入API Key",// "openAI API Key",
-    description:
-      "请把您购买的openAI API的Key值填入此处",//原来："Your OpenAI API key. You can get one at https://beta.openai.com",
+    title: "填入API Key", // "Fill in API Key"
+    description: "请把您购买的openAI API的Key值填入此处", // "Please fill in the key value of your purchased openAI API here"
   },
   {
     key: "openAICompletionEngine",
     type: "string",
-    default: "gpt-4o-mini", //原来：gpt-3.5-turbo
-    title: "填入你要使用的大模型名称",//"OpenAI Completion Engine"
-    description: "推荐：<br/>" +"1.默认的gpt-4o-mini是性价比最高的OpenAI的模型；<br/>" +"2.ChatGPT-4o-latest是在世界范围内长期霸榜多个大模型评测榜单榜首的模型（虽略贵，但效果爆表）", 
-                 //原来："See Engines in OpenAI docs."
+    default: "gpt-4o-mini",
+    title: "填入你要使用的大模型名称", // "Fill in the name of the large model you want to use"
+    description: "推荐：<br/>1.默认的gpt-4o-mini是性价比最高的OpenAI的模型；<br/>2.ChatGPT-4o-latest是在世界范围内长期霸榜多个大模型评测榜单榜首的模型（虽略贵，但效果爆表）", // "Recommended models and their features"
   },
   {
     key: "chatCompletionEndpoint",
     type: "string",
-    default: "https://api.openai.com/v1",
-    title: "OpenAI API Completion Endpoint",
-    description:
-      "非专业人士此处不要随意更改此处设置！",//"The endpoint to use for OpenAI API completion requests. You shouldn't need to change this.",
+    default: "https://api.shubiaobiao.cn/v1",
+    title: "API接口地址", // "API interface address"
+    description: "非专业人士此处不要随意更改此处设置！", // "Do not change this setting unless you are a professional"
   },
-    //代码新增：gpts相关
-    {
-      key: "gpts",
-      type: "string",
-      default: "",//原来"gpt-4-gizmo-g-B3hgivKK9",
-      title: "gpts对应ID",
-      // description: "See Engines in OpenAI docs.",
-      description:"非专业人士此处不要随意更改此处设置！",// "请填入要调用的chatgpt中的gpts ID",//代码修改：为中文
-    },
   {
-    key: "chatPrompt",//设置在system对应的系统提示词 inputMessages.unshift({ role: "system", content: openAiOptions.chatPrompt });
+    key: "gpts",
     type: "string",
-    default:
-      "Do not refer to yourself in your answers. Do not say as an AI language model，默认用中文回复！",//添加：默认用中文回复
-    title: "OpenAI Chat Prompt",
-    description:
-      "设定系统提示词，初始化模型如何按约定回复你的问题！"//"Initial message that tells ChatGPT how to answer. Only used for gpt-3.5. See https://platform.openai.com/docs/guides/chat/introduction for more info.",
+    default: "",
+    title: "GPTs模型ID", // "GPTs model ID"
+    description: "非专业人士此处不要随意更改此处设置！", // "Do not change this setting unless you are a professional"
+  },
+  {
+    key: "chatPrompt",
+    type: "string",
+    default: "Do not refer to yourself in your answers. Do not say as an AI language model，默认用中文回复！",
+    title: "系统提示词", // "System prompt"
+    description: "设定系统提示词，初��化模型如何按约定回复你的问题！", // "Set system prompt to initialize model response behavior"
   },
   {
     key: "openAITemperature",
-    type: "number",
-    default: 1.0,
-    title: "OpenAI Temperature（0--2）",
-    description:
-      "控制生成文本时的随机性和创造性;越靠近0，输出结果确定性越高，但文本更加保守、重复性更高；越靠近2，结果会更随机，更有创造性，但内容越变得不那么连贯或符合逻辑<br/>"+
-      "对于需要创意但仍需合理性和逻辑性的场景（例如广告文案、故事创作等），在保持文本连贯性和逻辑性的前提下，增加生成内容的多样性和创造性,大约在 0.7 到 1.2 之间是一个比较合适的选择."
-      //"The temperature controls how much randomness is in the output.<br/>" +
-      // "You can set a different temperature in your own prompt templates by adding a 'prompt-template' property to the block.",
+    type: "string",
+    default: "1.0",
+    title: "模型温度值", // "Model temperature value"
+    description: "控制模型输出的随机性。较高的值会使输出更加多样化和创意性，较低的值会使输出更加集中和确定性。建议创意性任务使用0.9，明确答案的任务使用0。", // "Controls output randomness. Higher for creativity, lower for consistency"
   },
   {
     key: "openAIMaxTokens",
-    type: "number",
-    default: 1000,
-    title: "OpenAI Max Tokens",
-    description:
-      "The maximum amount of tokens to generate. Tokens can be words or just chunks of characters. The number of tokens processed in a given API request depends on the length of both your inputs and outputs. As a rough rule of thumb, 1 token is approximately 4 characters or 0.75 words for English text. One limitation to keep in mind is that your text prompt and generated completion combined must be no more than the model's maximum context length (for most models this is 2048 tokens, or about 1500 words).",
-  },
-  {
-    key: "injectPrefix",
     type: "string",
-    default: "",
-    title: "Output prefix",
-    description:
-      "Prepends the output with this string. Such as a tag like [[gpt3]] or markdown like > to blockquote. Add a space at the end if you want a space between the prefix and the output or \\n for a linebreak.",
+    default: "1000",
+    title: "最大令牌数", // "Maximum token number"
+    description: "生成内容的最大长度限制。", // "Maximum length limit for generated content"
   },
   {
     key: "dalleImageSize",
     type: "string",
     default: "1024",
-    title: "DALL-E Image Size",
-    description:
-      "Size of the image to generate. Can be 256, 512, or 1024 for dall-e-2;  Must be one of 1024x1024 , 1792x1024 , or 1024x1792 for dall-e-3 models.",
+    title: "图像尺寸", // "Image size"
+    description: "生成图像的尺寸大小。可选值：256x256、512x512或1024x1024。", // "Size of generated images. Options: 256x256, 512x512, or 1024x1024"
   },
   {
     key: "dalleModel",
     type: "string",
     default: "dall-e-3",
-    title: "DALL-E Model",
-    description: "The DALL-E model to use. Can be dall-e-2 or dall-e-3.",
-  },
-  {
-    key: "dalleStyle",
-    type: "string",
-    default: "vivid",
-    title: "Style",
-    description:
-      "The style of the generated images. Must be one of vivid or natural. Vivid causes the model to lean towards generating hyper-real and dramatic images. Natural causes the model to produce more natural, less hyper-real looking images.",
+    title: "DALL-E模型版本", // "DALL-E model version"
+    description: "选择使用的DALL-E模型版本，可选dall-e-2或dall-e-3。", // "Choose DALL-E model version: dall-e-2 or dall-e-3"
   },
   {
     key: "dalleQuality",
     type: "string",
     default: "standard",
-    title: "Quality",
-    description:
-      "The quality of the image that will be generated. ‘hd’ creates images with finer details and greater consistency across the image. Defaults to ‘standard’.",
+    title: "图像质量", // "Image quality"
+    description: "生成图像的质量等级。'hd'模式会生成更细致和连贯的图像，默认为'standard'标准模式。", // "Quality level of generated images. 'hd' for higher detail, 'standard' by default"
+  },
+  {
+    key: "dalleStyle",
+    type: "string",
+    default: "vivid",
+    title: "图像风格", // "Image style"
+    description: "生成图像的风格选择。'vivid'生动模式会生成更夸张和戏剧性的图像，'natural'自然模式会生成更自然、真实的图像。", // "Style of generated images. 'vivid' for dramatic, 'natural' for realistic"
   },
   {
     key: "shortcutBlock",
     type: "string",
     default: "mod+j",
-    title: "Keyboard Shortcut for /gpt-block",
-    description: "",
+    title: "区块命令快捷键", // "Block command shortcut"
+    description: "用于触发/gpt-block命令的键盘快捷键。", // "Keyboard shortcut for /gpt-block command"
   },
   {
     key: "popupShortcut",
     type: "string",
     default: "mod+g",
-    title: "Keyboard Shortcut for /gpt popup",
-    description: "",
+    title: "弹窗命令快捷键", // "Popup command shortcut"
+    description: "用于触发/gpt弹窗的键盘快捷键。", // "Keyboard shortcut for /gpt popup"
   },
+  {
+    key: "injectPrefix",
+    type: "string",
+    default: "",
+    title: "注入前缀", // "Inject prefix"
+    description: "在每次生成内容前添加的固定前缀文本。", // "Fixed prefix text added before each generation"
+  },
+  {
+    key: "completionEndpoint",
+    type: "string",
+    default: "https://api.openai.com/v1",
+    title: "OpenAI API地址", // "OpenAI API endpoint"
+    description: "OpenAI API的访问地址", // "The endpoint for OpenAI API"
+  },
+  {
+    key: "customHeaders",
+    type: "string",
+    default: "",
+    title: "自定义请求头", // "Custom headers"
+    description: "自定义的HTTP请求头", // "Custom HTTP headers"
+  },
+  {
+    key: "disabled",
+    type: "boolean",
+    default: false,
+    title: "禁用插件", // "Disable plugin"
+    description: "是否禁用此插件", // "Whether to disable this plugin"
+  },
+  {
+    key: "useProxy",
+    type: "boolean",
+    default: false,
+    title: "使用代理", // "Use proxy"
+    description: "是否使用代理服务器", // "Whether to use proxy server"
+  },
+  {
+    key: "proxyEndpoint",
+    type: "string",
+    default: "",
+    title: "代理服务器地址", // "Proxy endpoint"
+    description: "代理服务器的地址", // "The endpoint of proxy server"
+  }
 ];
-// 将字符串中出现的 \\n（转义的换行符）替换为实际的换行符 \n。
-function unescapeNewlines(s: string) {
-  return s.replace(/\\n/g, "\n");
-}
 
+// 获取设置值的函数
 export function getOpenaiSettings(): PluginOptions {
-  const apiKey = logseq.settings!["openAIKey"];
-  const completionEngine = logseq.settings!["openAICompletionEngine"];
-  const injectPrefix = unescapeNewlines(logseq.settings!["injectPrefix"]);
-  const temperature = Number.parseFloat(logseq.settings!["openAITemperature"]);
-  const maxTokens = Number.parseInt(logseq.settings!["openAIMaxTokens"]);
+  // 获取设置值时也按照相同顺序
+  const apiKey = logseq.settings!["openAIKey"] as string;
+  const completionEngine = logseq.settings!["openAICompletionEngine"] as string;
+  const completionEndpoint = logseq.settings!["chatCompletionEndpoint"] as string;
+  const gpts = logseq.settings!["gpts"] as string;
+  const chatPrompt = logseq.settings!["chatPrompt"] as string;
+  const temperature = Number.parseFloat(logseq.settings!["openAITemperature"] as string);
+  const maxTokens = Number.parseInt(logseq.settings!["openAIMaxTokens"] as string);
   const dalleImageSize = logseq.settings!["dalleImageSize"] as DalleImageSize;
-  const dalleModel = logseq.settings!["dalleModel"];
-  const dalleStyle = logseq.settings!["dalleStyle"];
-  const dalleQuality = logseq.settings!["dalleQuality"];
-  const gpts = logseq.settings!["gpts"]; //代码新增
-  const chatPrompt = logseq.settings!["chatPrompt"];
-  const completionEndpoint = logseq.settings!["chatCompletionEndpoint"];
-  return {
-    apiKey,
+  const dalleModel = logseq.settings!["dalleModel"] as DalleModel;
+  const dalleQuality = logseq.settings!["dalleQuality"] as DalleQuality;
+  const dalleStyle = logseq.settings!["dalleStyle"] as DalleStyle;
+  const shortcutBlock = logseq.settings!["shortcutBlock"] as string;
+  const popupShortcut = logseq.settings!["popupShortcut"] as string;
+  const injectPrefix = unescapeNewlines(logseq.settings!["injectPrefix"] as string);
+  const customHeaders = logseq.settings!["customHeaders"] as string;
+  const disabled = logseq.settings!["disabled"] as boolean;
+  const useProxy = logseq.settings!["useProxy"] as boolean;
+  const proxyEndpoint = logseq.settings!["proxyEndpoint"] as string;
+
+  // 添加日志检查实际使用的配置
+  console.log("Current OpenAI Settings:", {
+    apiKey: apiKey ? `${apiKey.substring(0, 10)}...` : 'undefined',
     completionEngine,
-    temperature,
-    maxTokens,
-    dalleImageSize,
-    dalleModel,
-    dalleQuality,
-    dalleStyle,
-    injectPrefix,
-    gpts, //代码新增
-    chatPrompt,
     completionEndpoint,
+    gpts,
+  });
+
+  // 返回值需要同时满足 OpenAIOptions 和 PluginOptions
+  return {
+    // OpenAIOptions 字段
+    apiKey,                              // 从 OpenAIOptions 继承
+    completionEngine,                    // 从 OpenAIOptions 继承
+    completionEndpoint,                  // 从 OpenAIOptions 继承
+
+    // PluginOptions 字段
+    openAIKey: apiKey,                   // "sk-fRajR8nRQKGbNCYp209c505e5412478a8e6e8d586a7a91Ea"
+    openAICompletionEngine: completionEngine,  // "gpt-4o-mini"
+    chatCompletionEndpoint: completionEndpoint,  // "https://api.shubiaobiao.cn/v1"
+    gpts,                                // "gpt-4-gizmo-g-B3hgivKK9"
+    chatPrompt,                          // "Do not refer to yourself..."
+    openAITemperature: temperature,      // 1
+    openAIMaxTokens: maxTokens,          // 1000
+    dalleImageSize,                      // "1024"
+    dalleModel,                          // "dall-e-3"
+    dalleQuality,                        // "standard"
+    dalleStyle,                          // "vivid"
+    shortcutBlock,                       // "mod+j"
+    popupShortcut,                       // "mod+g"
+    injectPrefix,                        // "Generate From GPT-4o:\n"
+    customHeaders,                       // ""
+    disabled,                            // false
+    useProxy,                            // false
+    proxyEndpoint,                       // ""
   };
 }

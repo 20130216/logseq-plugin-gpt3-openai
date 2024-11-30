@@ -4,6 +4,7 @@ import {
   getPageContentFromBlock,
   getImageUrlFromBlock,
   saveDalleImage,
+  showMessage,
 } from "./logseq";
 import {
   OpenAIOptions,
@@ -24,119 +25,44 @@ import { Command } from "../ui/LogseqAI";
 export function handleOpenAIError(e: any) {
   let errorMessage = "";
 
+  // 检查是否是令牌额度用尽错误
+  if (e.message && e.message.includes("该令牌额度已用尽")) {
+    errorMessage = "您的 API 密钥额度已用尽，请更换新的 API 密钥或充值后再试。";
+    showMessage(errorMessage, "error");
+    return { error: errorMessage };
+  }
+
+  // 检查是否是认证错误
+  if (e.response?.status === 401 || e.message.includes("Authorization Required")) {
+    errorMessage = "API 密钥无效或已过期，请检查您的 API 密钥设置。";
+    showMessage(errorMessage, "error");
+    return { error: errorMessage };
+  }
+
+  // 其他错误处理
   if (e instanceof TypeError && e.message === "Failed to fetch") {
-    console.error(`Network error: ${e.message}`);
-    logseq.App.showMsg(
-      "网络连接失败或 API 配置有问题，请检查您的网络连接或 API 配置！",
-      "error"
-    );
-    errorMessage =
-      "网络连接失败或 API 配置有问题，请检查您的网络连接或 API 配置！";
+    errorMessage = "网络连接失败，请检查您的网络连接！";
+    showMessage(errorMessage, "error");
   } else if (e.name === "AbortError") {
-    console.error(`Request aborted: ${e.message}`);
-    logseq.App.showMsg(
-      "请求已取消，可能是由于超时或其他原因导致。请稍后再试！",
-      "error"
-    );
-    errorMessage = "请求已取消，可能是由于超时或其他原因导致。请稍后再试！";
+    errorMessage = "请求超时，请稍后重试！";
+    showMessage(errorMessage, "error");
   } else if (e instanceof Error) {
     if (e.message.includes("Unexpected Content-Type")) {
-      console.error(`Content-Type error: ${e.message}`);
-      logseq.App.showMsg(
-        "API 返回了不正确的内容类型，一般是 API 端点出现问题，请仔细检查 API 端点！",
-        "error"
-      );
-      errorMessage =
-        "API 返回了不正确的内容类型，一般是 API 端点出现问题，请仔细检查 API 端点！";
-    } else if (e.message.includes("Unexpected data format")) {
-      console.error(`Data parsing error: ${e.message}`);
-      logseq.App.showMsg("数据解析错误，请检查 API 返回的数据格式！", "error");
-      errorMessage = "数据解析错误，请检查 API 返回的数据格式！";
-    } else if (e.message === "未生成图像") {
-      console.error(`Image generation error: ${e.message}`);
-      logseq.App.showMsg("未生成图像，请检查输入或 API 配置！", "error");
-      errorMessage = "未生成图像，请检查输入或 API 配置！";
+      errorMessage = "API 配置有误，请检查设置！";
+      showMessage(errorMessage, "error");
     } else {
-      // 处理其他未分类的错误
-      console.error(`General error: ${e.message}`);
-      logseq.App.showMsg(
-        `异常提醒： ${e.message}！ \n请根据该异常提醒去溯源问题根源！`,
-        "error"
-      );
-      errorMessage = `异常提醒： ${e.message}！ \n请根据该异常提醒去溯源问题根源！`;
-    }
-  } else if (!e.response || !e.response.status) {
-    console.error(`Unknown OpenAI error: ${e}`);
-    logseq.App.showMsg(
-      "未知的 OpenAI 错误，一般是网络不畅导致的系统超时，请稍后重试！",
-      "error"
-    );
-    errorMessage =
-      "未知的 OpenAI 错误，一般是网络不畅导致的系统超时，请稍后重试！";
-  } else {
-    const httpStatus = e.response.status;
-    const errorMessageFromResponse = e.response.statusText;
-
-    switch (httpStatus) {
-      case 401:
-        console.error("OpenAI API key invalid.");
-        logseq.App.showMsg("无效的 OpenAI API 密钥！", "error");
-        errorMessage = "无效的 OpenAI API 密钥！";
-        break;
-      case 429:
-        console.warn(
-          "OpenAI API request rate too high. Please slow down your requests."
-        );
-        logseq.App.showMsg(
-          "OpenAI 请求频率过高！或你的额度已不够！",
-          "warning"
-        );
-        errorMessage = "OpenAI 请求频率过高！或你的额度已不够！";
-        break;
-      case 400:
-        console.error(`Bad request parameters: ${errorMessageFromResponse}`);
-        logseq.App.showMsg("请求参数错误，请检查输入！", "error");
-        errorMessage = "请求参数错误，请检查输入！";
-        break;
-      case 500:
-        console.error(`OpenAI server error: ${errorMessageFromResponse}`);
-        logseq.App.showMsg("OpenAI 服务器错误，请稍后重试！", "error");
-        errorMessage = "OpenAI 服务器错误，请稍后重试！";
-        break;
-      case 503:
-        console.error(
-          `OpenAI service unavailable: ${errorMessageFromResponse}`
-        );
-        logseq.App.showMsg(
-          "OpenAI 服务器当前无法处理请求，若非服务器临时过载或正在进行维护，请检查API的配置是否准确！",
-          "error"
-        );
-        errorMessage =
-          "OpenAI 服务器当前无法处理请求，若非服务器临时过载或正在进行维护，请检查API的配置是否准确！";
-        break;
-      default:
-        console.error(
-          `Unknown OpenAI error: HTTP Status ${httpStatus}, Message: ${errorMessageFromResponse}`
-        );
-        logseq.App.showMsg(
-          `未知的 OpenAI 错误: HTTP Status ${httpStatus}, Message: ${errorMessageFromResponse}`,
-          "error"
-        );
-        errorMessage = `未知的 OpenAI 错误: HTTP Status ${httpStatus}, Message: ${errorMessageFromResponse}`;
-        break;
+      errorMessage = "生成失败，请稍后重试！";
+      showMessage(errorMessage, "error");
     }
   }
 
-  return { error: errorMessage }; // 返回包含错误信息的对象
+  return { error: errorMessage };
 }
 
 function validateSettings(settings: OpenAIOptions) {
   if (!settings.apiKey) {
     console.error("Need API key set in settings.");
-    logseq.App.showMsg(
-      "Need openai API key. Add one in plugin settings.",
-      "error"
-    );
+    showMessage("Need openai API key. Add one in plugin settings.", "error");
     throw new Error("Need API key set in settings.");
   }
 
@@ -151,17 +77,27 @@ function validateSettings(settings: OpenAIOptions) {
     settings.dalleImageSize !== "1792x1024"
   ) {
     console.error("DALL-E image size must be 256, 512, or 1024.");
-    logseq.App.showMsg("DALL-E image size must be 256, 512, or 1024.", "error");
-    throw new Error(
-      "DALL-E image size must be 256, 512, 1024, 1024x1792, or 179x1024"
-    );
+    showMessage("DALL-E image size must be 256, 512, or 1024.", "error");
+    throw new Error("DALL-E image size must be 256, 512, 1024, 1024x1792, or 179x1024");
   }
 }
 
 // 10.24:push24/25 测试25次，24次无bug，详细注释版
 // 负责在用户触发快捷键时，获取当前块的内容，调用 openAIWithStream 生成内容，并将结果插入到新块中。
 export async function runGptBlock(b: IHookEvent) {
+  // 在获取设置之前，先打印完整的 logseq.settings 内容
+  console.log("完整的设置内容:", logseq.settings);
+
   const openAISettings = getOpenaiSettings();
+  
+  // 打印实际使用的配置
+  console.log("实际使用的配置:", {
+    apiKey: openAISettings.apiKey ? `${openAISettings.apiKey.substring(0, 10)}...` : 'undefined',
+    completionEngine: openAISettings.completionEngine,
+    completionEndpoint: openAISettings.completionEndpoint,
+    // 添加其他相关配置...
+  });
+
   validateSettings(openAISettings);
 
   const currentBlock = await logseq.Editor.getBlock(b.uuid);
@@ -171,7 +107,7 @@ export async function runGptBlock(b: IHookEvent) {
   }
 
   if (currentBlock.content.trim().length === 0) {
-    logseq.App.showMsg("Empty Content", "warning");
+    showMessage("Empty Content", "warning");
     console.warn("Blank page");
     return;
   }
@@ -188,7 +124,7 @@ export async function runGptBlock(b: IHookEvent) {
     );
 
     if (openAISettings.injectPrefix && result.length == 0) {
-      // 确保在后续内容生成之前，前缀已经被添加到 result 中，比如 injectPrefix 被设置为：“#Gpt4o”
+      // 确保在后续内容生成之前，前缀已经被加到 result 中，比如 injectPrefix 被设置为：“#Gpt4o”
       result = openAISettings.injectPrefix + result;
     }
 
@@ -196,7 +132,7 @@ export async function runGptBlock(b: IHookEvent) {
     // 内容回调函数，每当从 OpenAI API 获取到一部分内容时，会调用这个函数。
     // 这个函数负责将获取到的内容拼接到 result 中，并更新插入的新块的内容。
     // =>：箭头函数的语法，用于定义匿名函数；例如：async (content: string) => {...} 表示一个异步箭头函数，接收 content 参数
-    // 更新块的内容：将从 OpenAI API 获取的内容逐步拼接到 result 中，并更新插入的新块的内容。
+    // 更新块的内容：将从 OpenAI API 获取的内容逐步拼接到 result 中，更新插入的新块的内容。
     // 确保 result 的值：即使 content 为 null 或 undefined，也不会影响 result 的拼接。
     // await openAIWithStream(currentBlock.content, openAISettings, async (content: string) => {...}, () => {});：
     // 调用 openAIWithStream 函数，传入当前块的内容、设置、内容回调和停止回调。
@@ -225,7 +161,7 @@ export async function runGptBlock(b: IHookEvent) {
     );
 
     if (!result) {
-      logseq.App.showMsg("No OpenAI content", "warning");
+      showMessage("No OpenAI content", "warning");
       return;
     }
   } catch (e: any) {
@@ -241,7 +177,7 @@ export async function runGptPage(b: IHookEvent) {
   const currentBlock = await logseq.Editor.getBlock(b.uuid);
 
   if (pageContents.length === 0) {
-    logseq.App.showMsg("Empty Content", "warning");
+    showMessage("Empty Content", "warning");
     console.warn("Blank page");
     return;
   }
@@ -279,7 +215,7 @@ export async function runGptPage(b: IHookEvent) {
       () => {}
     );
     if (!result) {
-      logseq.App.showMsg("No OpenAI content", "warning");
+      showMessage("No OpenAI content", "warning");
       return;
     }
   } catch (e: any) {
@@ -303,7 +239,7 @@ export async function runGptsID(
   }
 
   if (currentBlock.content.trim().length === 0) {
-    logseq.App.showMsg("Empty Content", "warning");
+    showMessage("Empty Content", "warning");
     console.warn("Blank page");
     return;
   }
@@ -338,7 +274,7 @@ export async function runGptsID(
     );
 
     if (!result) {
-      logseq.App.showMsg("No OpenAI content", "warning");
+      showMessage("No OpenAI content", "warning");
       return;
     }
   } catch (e: any) {
@@ -655,7 +591,7 @@ export async function createRunGptsTomlCommand(command: Command) {
     }
 
     if (currentBlock.content.trim().length === 0) {
-      logseq.App.showMsg("Empty Content", "warning");
+      showMessage("Empty Content", "warning");
       console.warn("Blank page");
       return;
     }
@@ -797,14 +733,14 @@ export async function createRunGptsTomlCommand(command: Command) {
           }
         } catch (error) {
           console.error("Error in onStop:", error);
-          logseq.App.showMsg("Error processing response", "error");
+          showMessage("Error processing response", "error");
         }
       };
 
       // 处理常规文本响应的辅助函数
       const handleRegularTextResponse = async () => {
         if (!result) {
-          logseq.App.showMsg("No OpenAI content", "warning");
+          showMessage("No OpenAI content", "warning");
           return;
         }
         if (insertBlock) {
@@ -821,7 +757,7 @@ export async function createRunGptsTomlCommand(command: Command) {
       );
     } catch (error) {
       console.error("Error in createRunGptsTomlCommand:", error);
-      logseq.App.showMsg("Error processing command", "error");
+      showMessage("Error processing command", "error");
     }
   };
 } 
@@ -845,7 +781,7 @@ export async function runDalleBlock(b: IHookEvent) {
   }
 
   if (currentBlock.content.trim().length === 0) {
-    logseq.App.showMsg("Empty Content", "warning");
+    showMessage("Empty Content", "warning");
     console.warn("Blank block");
     return;
   }
@@ -853,7 +789,7 @@ export async function runDalleBlock(b: IHookEvent) {
   try {
     const imageURL = await dallE(currentBlock.content, openAISettings);
     if (!imageURL) {
-      logseq.App.showMsg("No Dalle results.", "warning");
+      showMessage("No Dalle results.", "warning");
       return;
     }
     const imageFileName = await saveDalleImage(imageURL);
@@ -870,7 +806,7 @@ export async function runWhisper(b: IHookEvent) {
   if (currentBlock) {
     const audioFile = await getAudioFile(currentBlock.content);
     if (!audioFile) {
-      logseq.App.showMsg("No supported audio file found in block.", "warning");
+      showMessage("No supported audio file found in block.", "warning");
       return;
     }
     const openAISettings = getOpenaiSettings();
@@ -892,7 +828,7 @@ export async function runReadImageURL(b: IHookEvent) {
   if (currentBlock) {
     const imageUrl = await getImageUrlFromBlock(currentBlock.content);
     if (!imageUrl) {
-      logseq.App.showMsg("No valid image URL found in block.", "warning");
+      showMessage("No valid image URL found in block.", "warning");
       return;
     }
 
@@ -909,7 +845,7 @@ export async function runReadImageURL(b: IHookEvent) {
         // 如果是远程图片链接，调用 readImageURL
         description = await readImageURL(imageUrl, openAISettings);
       } else {
-        // 如果是本地图片路径，调用 readLocalImageURL
+        // 如果是本地图片路径���调用 readLocalImageURL
         description = await readLocalImageURL(imageUrl, openAISettings);
       }
 

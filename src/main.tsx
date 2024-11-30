@@ -9,6 +9,7 @@ import { getOpenaiSettings, settingsSchema } from "./lib/settings";
 import { createRunGptsTomlCommand, handleOpenAIError, runDalleBlock, runGptBlock, runGptPage, runGptsID, runWhisper } from "./lib/rawCommands";
 import { BlockEntity, IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { useImmer } from 'use-immer';
+import { showMessage } from './lib/logseq';
 
 logseq.useSettingsSchema(settingsSchema);
 
@@ -112,7 +113,7 @@ const LogseqApp = () => {
       console.log("Registering popup shortcut...");
       if (logseq.settings!["popupShortcut"]) {
         logseq.App.registerCommandShortcut(
-          { binding: logseq.settings!["popupShortcut"] },
+          { binding: logseq.settings!["popupShortcut"] as string },
           async () => {
             console.log(`Running popup shortcut: ${logseq.settings!["popupShortcut"]}`);
             const activeText = await logseq.Editor.getEditingCursorPosition();
@@ -130,7 +131,7 @@ const LogseqApp = () => {
               });
             } else if (!activeText && !currentPage) {
               console.log("No valid context for shortcut.");
-              logseq.App.showMsg("Put cursor in block or navigate to specific page to use keyboard shortcut", "warning");
+              showMessage("Put cursor in block or navigate to specific page to use keyboard shortcut", "warning");
               return;
             } else if (activeText && currentBlock) {
               console.log("Single block selected.");
@@ -183,8 +184,7 @@ const LogseqApp = () => {
         });
         openUI();
       } else {
-        // 给用户一个友好的提示
-        logseq.App.showMsg("所选块无效，请选择一个有效的块。", "warning");
+        showMessage("所选块无效，请选择一个有效的块。", "warning");
       }
     });
     logseq.Editor.registerSlashCommand("gpt-page", runGptPage);
@@ -198,7 +198,7 @@ const LogseqApp = () => {
 
     if (logseq.settings!["shortcutBlock"]) {
       logseq.App.registerCommandShortcut(
-        { "binding": logseq.settings!["shortcutBlock"] },
+        { binding: logseq.settings!["shortcutBlock"] as string },
         runGptBlock
       );
     }
@@ -217,7 +217,7 @@ const LogseqApp = () => {
       commandName: "提示词教授（对话人次100k+）", 
       gptsID: "gpt-4-gizmo-g-qfoOICq1l" 
     },
-    //提示词工程师：生成卓越的 ChatGPT 提示或改进您现有的提示。通过学习和应用最佳提示实践，成为一名专业的提示工程师。      
+    //提示词工程师：生成卓越的 ChatGPT 提示或改进您现有的提示。通过学习和应用��提示实践，成为一名专业的提示工程师。      
     //prompt-engineer     评级1k+ 4.3分，类别 Productivity生产力，对话200k+， 2024.10.28                                  
     { 
       commandName: "提示词工程师（对话人次200k+）", 
@@ -359,7 +359,7 @@ const LogseqApp = () => {
     //微信朋友圈写手：擅长撰写微信朋友圈
     //wei-xin-peng-you-quan-xie-shou 评级10+ 3.5分,无类别，对话1k+， 2024.10.28
     { 
-      commandName: "微信朋友圈写手", 
+      commandName: "���信朋友圈写���", 
       gptsID: "gpt-4-gizmo-g-xJCEKei5d" 
     }, 
 
@@ -371,7 +371,7 @@ const LogseqApp = () => {
       commandName: "知乎回答大师（对话人次1k+）", 
       gptsID: "gpt-4-gizmo-g-WcyReiblz" 
     },     
-    // 知乎文案专家：这是大全编写的一名资深的知乎文案专家，专长于创作引人入胜且专业的各种内容，包括问题或者任何文章，并自动配图三张。欢迎关注我的公众号"大全Prompter"领取更多好玩的 GPTs 小应用。使用教程：https://t.zsxq.com/2b5jM；GPTs合集 https://t.zsxq.com/18jTBeB8a（公众号: "大全Prompter"）
+    // 知乎文案专家：这是大全编写的一名资深的知乎文案专家，专长于创作引人入胜且专业的各种内容，包括问题或者任何文章，并自动配图三张。欢���关注我的公众号"大全Prompter"领取更多好玩的 GPTs 小应用。使用教程：https://t.zsxq.com/2b5jM；GPTs合集 https://t.zsxq.com/18jTBeB8a（公众号: "大全Prompter"）
     // zhi-hu-wen-an-zhuan-jia-gong-zhong-hao-bao-wen 100+评比4.7分,类别 Writing （写作，对话5k+， 2024.10.28
     { 
       commandName: "知乎文案专家（评分高，对话人次5k+）", 
@@ -479,7 +479,7 @@ const LogseqApp = () => {
 
     "// 注册分隔符",    
 
-    // Copywriter GPT - Marketing, Branding, AdsCopywriter GPT - 营销、品牌推广、广告；您的病毒式广告文案的创新合作伙伴！深入研究根据您的需求微调的病毒式营销策略！现在支持自定义网站链接、图片和文档上传！  
+    // Copywriter GPT - Marketing, Branding, AdsCopywriter GPT - 营销、品牌推广、广告；您的病毒式广告文案的创新合作伙伴！入研究根据的需求微调的病毒式营销策略！现在支持自定义网站链接、图片和文档上传！  
     //copywriter-gpt-marketing-branding-ads    评级10k+ 4.2分,类别 属于Writing (全球)，对话1个月+， 2024.10.28
     { 
       commandName: "Marketing市场营销-品牌推广-广告文案撰稿人（好评率高，病毒式广告）", 
@@ -552,20 +552,10 @@ const LogseqApp = () => {
   ]
   
   const createRunGptsIDCommand = (gptsID: string, commandName: string) => async (b: IHookEvent) => {
-    console.log(`Running command: ${commandName} with gptsID: ${gptsID}`);
     const block = await logseq.Editor.getBlock(b.uuid);
-    if (block) {
-      console.log("Block found, updating app state and opening UI.");
-      updateAppState(draft => {
-        draft.selection = {
-          type: "singleBlockSelected",
-          block: block,
-        };
-      });
-      // openUI();
-    } else {
-      console.log("Block not found, showing warning message.");
-      logseq.App.showMsg("所选块无效，请选择一个有效的块。", "warning");
+    if (!block) {
+      console.error("Block not found, showing warning message.");
+      showMessage("所选块无效，请选择一个有效的块。", "warning");
     }
     await runGptsID(b, gptsID, commandName);
   };

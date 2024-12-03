@@ -62,7 +62,7 @@ export const settingsSchema: SettingSchemaDesc[] = [
     type: "string",
     default: "Do not refer to yourself in your answers. Do not say as an AI language model，默认用中文回复！",
     title: "系统提示词", // "System prompt"
-    description: "设定系统提示词，初��化模型如何按约定回复你的问题！", // "Set system prompt to initialize model response behavior"
+    description: "设定系统提示词，初化模型如何按约定回复你的问题！", // "Set system prompt to initialize model response behavior"
   },
   {
     key: "openAITemperature",
@@ -90,7 +90,7 @@ export const settingsSchema: SettingSchemaDesc[] = [
     type: "string",
     default: "dall-e-3",
     title: "DALL-E模型版本", // "DALL-E model version"
-    description: "选择使用的DALL-E模型版本，可选dall-e-2或dall-e-3。", // "Choose DALL-E model version: dall-e-2 or dall-e-3"
+    description: "选择使��的DALL-E模型版本，可选dall-e-2或dall-e-3。", // "Choose DALL-E model version: dall-e-2 or dall-e-3"
   },
   {
     key: "dalleQuality",
@@ -128,13 +128,6 @@ export const settingsSchema: SettingSchemaDesc[] = [
     description: "在每次生成内容前添加的固定前缀文本。", // "Fixed prefix text added before each generation"
   },
   {
-    key: "completionEndpoint",
-    type: "string",
-    default: "https://api.openai.com/v1",
-    title: "OpenAI API地址", // "OpenAI API endpoint"
-    description: "OpenAI API的访问地址", // "The endpoint for OpenAI API"
-  },
-  {
     key: "customHeaders",
     type: "string",
     default: "",
@@ -169,7 +162,7 @@ export function getOpenaiSettings(): PluginOptions {
   // 获取设置值时也按照相同顺序
   const apiKey = logseq.settings!["openAIKey"] as string;
   const completionEngine = logseq.settings!["openAICompletionEngine"] as string;
-  const completionEndpoint = logseq.settings!["chatCompletionEndpoint"] as string;
+  const chatCompletionEndpoint = logseq.settings!["chatCompletionEndpoint"] as string;
   const gpts = logseq.settings!["gpts"] as string;
   const chatPrompt = logseq.settings!["chatPrompt"] as string;
   const temperature = Number.parseFloat(logseq.settings!["openAITemperature"] as string);
@@ -190,7 +183,7 @@ export function getOpenaiSettings(): PluginOptions {
   console.log("Current OpenAI Settings:", {
     apiKey: apiKey ? `${apiKey.substring(0, 10)}...` : 'undefined',
     completionEngine,
-    completionEndpoint,
+    chatCompletionEndpoint,
     gpts,
   });
 
@@ -199,12 +192,11 @@ export function getOpenaiSettings(): PluginOptions {
     // OpenAIOptions 字段
     apiKey,                              // 从 OpenAIOptions 继承
     completionEngine,                    // 从 OpenAIOptions 继承
-    completionEndpoint,                  // 从 OpenAIOptions 继承
+    chatCompletionEndpoint,             // 只保留一次
 
     // PluginOptions 字段
     openAIKey: apiKey,                   // "sk-fRajR8nRQKGbNCYp209c505e5412478a8e6e8d586a7a91Ea"
     openAICompletionEngine: completionEngine,  // "gpt-4o-mini"
-    chatCompletionEndpoint: completionEndpoint,  // "https://api.shubiaobiao.cn/v1"
     gpts,                                // "gpt-4-gizmo-g-B3hgivKK9"
     chatPrompt,                          // "Do not refer to yourself..."
     openAITemperature: temperature,      // 1

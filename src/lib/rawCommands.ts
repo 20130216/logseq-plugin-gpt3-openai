@@ -94,7 +94,7 @@ export async function runGptBlock(b: IHookEvent) {
   console.log("实际使用的配置:", {
     apiKey: openAISettings.apiKey ? `${openAISettings.apiKey.substring(0, 10)}...` : 'undefined',
     completionEngine: openAISettings.completionEngine,
-    completionEndpoint: openAISettings.completionEndpoint,
+    chatCompletionEndpoint: openAISettings.chatCompletionEndpoint,
     // 添加其他相关配置...
   });
 
@@ -526,10 +526,18 @@ function parseImageSizeFromPrompt(prompt: string): string | null {
                     size
                   );
                   if ("url" in imageUrl) {
-                    const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
-                    result = result.replace(placeholder, imageMarkdown);
-                    if (insertBlock) {
-                      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                    try {
+                      const imageFileName = await saveDalleImage(imageUrl.url);
+                      result = result.replace(placeholder, `${imageFileName}\n`);
+                      if (insertBlock) {
+                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                      }
+                    } catch (error) {
+                      console.error("Failed to save image:", error);
+                      result = result.replace(placeholder, "图片保存失败\n");
+                      if (insertBlock) {
+                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                      }
                     }
                   } else {
                     console.error("Failed to generate image:", imageUrl.error);
@@ -626,7 +634,7 @@ export async function createRunGptsTomlCommand(command: Command) {
       const isParseJson = command.isParseJson;
 
       const onImagePrompt = async (imagePrompt: string) => {
-        if (isParseJson) return; // 如果是 JSON 类型命令，则跳过图片生成流程
+        if (isParseJson) return;
 
         const placeholder = "为该段落绘图中，请稍后...\n";
         pendingImagePrompts.set(imagePrompt, placeholder);
@@ -640,26 +648,34 @@ export async function createRunGptsTomlCommand(command: Command) {
           );
         }
 
-        const imageUrl = await dallE_gptsToml(
+        const imageResponse = await dallE_gptsToml(
           truncatedPrompt,
           openAISettings,
           imageSize
         );
-        if ("url" in imageUrl) {
-          const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
-          result = result.replace(placeholder, imageMarkdown);
-          if (insertBlock) {
-            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+
+        if ("url" in imageResponse) {
+          try {
+            const imageFileName = await saveDalleImage(imageResponse.url);
+            result = result.replace(placeholder, `${imageFileName}\n`);
+            if (insertBlock) {
+              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+            }
+          } catch (error) {
+            console.error("Failed to save image:", error);
+            result = result.replace(placeholder, "图片保存失败\n");
+            if (insertBlock) {
+              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+            }
           }
-          pendingImagePrompts.delete(imagePrompt);
         } else {
-          console.error("Failed to generate image:", imageUrl.error);
-          result = result.replace(placeholder, "\n");
+          console.error("Failed to generate image:", imageResponse.error);
+          result = result.replace(placeholder, "图片生成失败\n");
           if (insertBlock) {
             await logseq.Editor.updateBlock(insertBlock.uuid, result);
           }
-          pendingImagePrompts.delete(imagePrompt);
         }
+        pendingImagePrompts.delete(imagePrompt);
       };
 
       const onStop = async () => {
@@ -710,10 +726,18 @@ export async function createRunGptsTomlCommand(command: Command) {
                     size
                   );
                   if ("url" in imageUrl) {
-                    const imageMarkdown = `[](${imageUrl.url})\n![](${imageUrl.url})\n\n`;
-                    result = result.replace(placeholder, imageMarkdown);
-                    if (insertBlock) {
-                      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                    try {
+                      const imageFileName = await saveDalleImage(imageUrl.url);
+                      result = result.replace(placeholder, `${imageFileName}\n`);
+                      if (insertBlock) {
+                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                      }
+                    } catch (error) {
+                      console.error("Failed to save image:", error);
+                      result = result.replace(placeholder, "图片保存失败\n");
+                      if (insertBlock) {
+                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                      }
                     }
                   } else {
                     console.error("Failed to generate image:", imageUrl.error);
@@ -845,7 +869,7 @@ export async function runReadImageURL(b: IHookEvent) {
         // 如果是远程图片链接，调用 readImageURL
         description = await readImageURL(imageUrl, openAISettings);
       } else {
-        // 如果是本地图片路径���调用 readLocalImageURL
+        // 如果是本地图片路径调用 readLocalImageURL
         description = await readLocalImageURL(imageUrl, openAISettings);
       }
 

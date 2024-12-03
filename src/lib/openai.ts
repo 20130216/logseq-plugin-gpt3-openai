@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import "@logseq/libs";
 import { backOff } from "exponential-backoff";
 import { handleOpenAIError } from "./rawCommands";
-import { showMessage } from "./logseq";
+// import { showMessage } from "./logseq";
 // import {CompletionChoice} from "openai/resources/completions";
 // import { ChatCompletion, ChatCompletionChoice, CompletionChoice, Choice } from '../../../node_modules/.pnpm/openai@4.67.3/node_modules/openai/src/resources/chat/completions';
 
@@ -30,8 +30,8 @@ export interface OpenAIOptions {
   dalleQuality?: DalleQuality;
   dalleStyle?: DalleStyle;
   chatPrompt?: string;
-  completionEndpoint?: string;
-  gpts?: string; //代码新增
+  chatCompletionEndpoint?: string;
+  gpts?: string;
 }
 
 const OpenAIDefaults = (apiKey: string): OpenAIOptions => ({
@@ -43,7 +43,7 @@ const OpenAIDefaults = (apiKey: string): OpenAIOptions => ({
   dalleModel: "dall-e-3",
   dalleQuality: "standard",
   dalleStyle: "vivid",
-  gpts: "gpt-4-gizmo-g-B3hgivKK9", //代码新增
+  gpts: "gpt-4-gizmo-g-B3hgivKK9",
 });
 
 const retryOptions = {
@@ -87,9 +87,9 @@ export async function whisper(
   openAiOptions: OpenAIOptions
 ): Promise<string> {
   const apiKey = openAiOptions.apiKey;
-  const baseUrl = openAiOptions.completionEndpoint
-    ? migrateOldUrl(openAiOptions.completionEndpoint)
-    : "https://api.openai.com/v1";
+  const baseUrl = openAiOptions.chatCompletionEndpoint
+    ? migrateOldUrl(openAiOptions.chatCompletionEndpoint)
+    : "https://api.shubiaobiao.cn/v1";
   const model = "whisper-1";
 
   // Create a FormData object and append the file
@@ -128,7 +128,7 @@ export async function dallE(
 
   const openai = new OpenAI({
     apiKey: options.apiKey,
-    baseURL: options.completionEndpoint,
+    baseURL: options.chatCompletionEndpoint,
     dangerouslyAllowBrowser: true,
   });
 
@@ -166,7 +166,7 @@ export async function openAI(
 
   const openai = new OpenAI({
     apiKey: options.apiKey,
-    baseURL: options.completionEndpoint,
+    baseURL: options.chatCompletionEndpoint,
   });
   try {
     if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4")) {
@@ -252,7 +252,7 @@ function getDataFromStreamValue(value: string): any[] {
         return []; // 返回空数组以跳过 [DONE] 标记
       }
       try {
-        // 检查 JSON 串是否完整
+        // 检查 JSON 否完整
         if (data.startsWith("{") && data.endsWith("}")) {
           return JSON.parse(data);
         } else {
@@ -274,7 +274,7 @@ function getDataFromStreamValue(value: string): any[] {
 // 1.异步处理：使用 async/await 和 Promise 结合的方式，使得代码更加清晰易读。
 // 2.空值检查：增加了对 value 的空值检查，避免了可能的 null  undefined 错误
 // 3.超时机制：增加了超时机制，如果流读取超过 30 秒则取消读取器并抛出错误，提高了系统的健壮性。
-// 4.错误处理提供了统一的用户友好的错误提示，且可以在 UI 中显示错误信息，提升了用户体验。
+// 4.错误处理提供了统一的用户友好的错误提示，且可以在 UI 中显示错信息，提升了用户体验。
 
 export async function openAIWithStream(
   input: string,
@@ -288,7 +288,7 @@ export async function openAIWithStream(
   try {
     console.log(
       "Sending request to:",
-      `${options.completionEndpoint}/chat/completions`
+      `${options.chatCompletionEndpoint}/chat/completions`
     );
     const body = {
       messages: [
@@ -307,7 +307,7 @@ export async function openAIWithStream(
     };
 
     const response = await fetch(
-      `${options.completionEndpoint}/chat/completions`,
+      `${options.chatCompletionEndpoint}/chat/completions`,
       {
         method: "POST",
         body: JSON.stringify(body),
@@ -398,7 +398,7 @@ export async function openAIWithStream(
           console.error("Error reading stream:", error);
           handleOpenAIError(error);
           reader.cancel(); // 取消读器
-          onStop(); // 调用停止回调
+          onStop(); // 调停止回调
           return null;
         }
       };
@@ -428,7 +428,7 @@ function trimLeadingWhitespace(text: string): string {
 // 终局函数2:runGptBlock中的openAIWithStreamGptsID的机器注释+异常分类处理的定稿版（10.26号上午定稿，含10种异常分类处理场景）；共进行了30-40次左测试,很少出错！！！
 // （10.26号下午）特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")两种额外的异常处理方式;
 
-// 1.异步处理：使用 async/await 语法使代码更简洁、易读。
+// 1.异步处理：使用 async/await 语法使代码更简洁、读。
 // 2.空值检查：增加了对 value 是否为 null 或 undefined 的检查，避免因空值导致的运行时错误。
 // 3.超时机制：增加了超时机制，防止长时间挂起，提高系统的健壮性和用户体验。
 // 4.统一错误提示：无论错误的具体原因是什么，都提供一个统一的用户友好的错误提示信息。
@@ -465,7 +465,7 @@ export async function openAIWithStreamGptsID(
 
     const response = await backOff(async () => {
       const fetchResponse = await fetch(
-        `${options.completionEndpoint}/chat/completions`,
+        `${options.chatCompletionEndpoint}/chat/completions`,
         {
           method: "POST",
           body: JSON.stringify(body),
@@ -569,7 +569,7 @@ export async function openAIWithStreamGptsID(
         };
 
         return readStream().catch((error) => {
-          console.error("读取流时发生错误:", error); // 打印读取流时的错误信息
+          console.error("读取流时生错误:", error); // 打印读取流时的错误信息
           handleOpenAIError(error);
           return null;
         });
@@ -768,7 +768,7 @@ export async function openAIWithStreamGptsToml(
 
   try {
     const response = await fetch(
-      `${options.completionEndpoint}/chat/completions`,
+      `${options.chatCompletionEndpoint}/chat/completions`,
       {
         method: "POST",
         body: JSON.stringify(body),
@@ -883,119 +883,78 @@ export async function openAIWithStreamGptsToml(
 export async function dallE_gptsToml(
   prompt: string,
   openAiOptions: OpenAIOptions,
-  imageSize: string = "1024x1024"
+  size: string
 ): Promise<{ url: string } | { error: string }> {
-  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
-
   try {
-    const body = {
-      prompt: prompt,
-      n: 1,
-      size: imageSize,
-      response_format: "url",
-      model: options.dalleModel,
-    };
+    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
 
-    const url = `${options.completionEndpoint}/images/generations`;
-    
-    const response = await fetch(url, {
-      method: "POST",
-      body: JSON.stringify(body),
-      headers: {
-        Authorization: `Bearer ${options.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      signal: AbortSignal.timeout(120000),
+    const openai = new OpenAI({
+      apiKey: options.apiKey,
+      baseURL: options.chatCompletionEndpoint,
+      dangerouslyAllowBrowser: true,
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      const errorMessage = errorData?.error?.message || await response.text();
+    // 处理图片尺寸
+    let imageSizeRequest: OpenAI.ImageGenerateParams["size"] = "1024x1024";
+    
+    if (size.includes("x")) {
+      // 验证尺寸格式
+      const validSizes = [
+        "256x256",
+        "512x512",
+        "1024x1024",
+        "1024x1792",
+        "1792x1024"
+      ] as const;
       
-      // 内容安全检查错误
-      if (errorMessage.includes("safety system") || errorMessage.includes("content_policy_violation")) {
-        const userFriendlyError = "抱歉，您描述的场景包含了暴力、血腥等不适合生成图像的内容。建议您：\n" +
-          "1. 使用更温和的描述方式\n" +
-          "2. 避免描述暴力或血腥场景\n" +
-          "3. 尝试描述场景的其他方面";
-        
-        showMessage(userFriendlyError, "warning");
-        return { error: userFriendlyError };
+      if (validSizes.includes(size as any)) {
+        imageSizeRequest = size as OpenAI.ImageGenerateParams["size"];
       }
-
-      // 额度用尽错误 - 仅在确认是真实的额度用尽时才重试
-      if (response.status === 401 && 
-          errorMessage.includes("该令牌额度已用尽") && 
-          errorMessage.includes("request id:")) {
-        console.log("检测到额度用尽错误，尝试重试请求...");
-        return await retryRequest(prompt, openAiOptions, imageSize);
-      }
-
-      console.error(
-        "Response not OK, status:",
-        response.status,
-        "statusText:",
-        response.statusText,
-        "ErrorMessage:",
-        errorMessage
-      );
-      
-      return { error: errorMessage };
-    }
-
-    const data = await response.json();
-    if (data?.data?.[0]?.url) {
-      return { url: data.data[0].url };
     } else {
-      const errorMessage = "未能生成有效的图像URL";
-      showMessage(errorMessage, "error");
-      return { error: errorMessage };
+      // 处理单个数字的情况
+      const sizeMap: Record<string, OpenAI.ImageGenerateParams["size"]> = {
+        "256": "256x256",
+        "512": "512x512",
+        "1024": "1024x1024"
+      };
+      imageSizeRequest = sizeMap[size] || "1024x1024";
     }
-  } catch (e: any) {
-    const errorMessage = e.message || "图像生成过程中发生未知错误";
-    showMessage(errorMessage, "error");
+
+    const imageParameters: OpenAI.ImageGenerateParams = {
+      prompt,
+      n: 1,
+      size: imageSizeRequest,
+      model: options.dalleModel,
+      quality: options.dalleQuality,
+      style: options.dalleStyle,
+    };
+
+    const response = await backOff(
+      () => openai.images.generate(imageParameters),
+      retryOptions
+    );
+    
+    const imageUrl = response.data[0]?.url;
+    if (!imageUrl) {
+      throw new Error("No image URL in response");
+    }
+    
+    return { url: imageUrl };
+  } catch (error: unknown) {
+    console.error("Error in dallE_gptsToml:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to generate image";
     return { error: errorMessage };
   }
 }
 
-// 添加重试逻辑
-async function retryRequest(
-  prompt: string,
-  openAiOptions: OpenAIOptions,
-  imageSize: string,
-  maxRetries: number = 3
-): Promise<{ url: string } | { error: string }> {
-  for (let i = 0; i < maxRetries; i++) {
-    console.log(`尝试重试请求，第 ${i + 1} 次...`);
-    try {
-      // 添加短暂延迟
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-      
-      const result = await dallE_gptsToml(prompt, openAiOptions, imageSize);
-      if ('url' in result) {
-        return result;
-      }
-      
-      // 如果不是额度错误，直接返回错误
-      if (!result.error.includes("该令牌额度已用尽")) {
-        return result;
-      }
-    } catch (e) {
-      console.error(`重试失败，第 ${i + 1} 次:`, e);
-    }
-  }
-  
-  return { error: "多次尝试后仍然失败，请检查 API 配置或稍后重试" };
-}
-
-// 新增函数2 系列
+// 新增函2 系列
 export async function readImageURL(
   url: string,
   openAiOptions: OpenAIOptions
 ): Promise<string> {
   const apiKey = openAiOptions.apiKey;
-  const baseUrl = openAiOptions.completionEndpoint
-    ? openAiOptions.completionEndpoint
+  const baseUrl = openAiOptions.chatCompletionEndpoint
+    ? openAiOptions.chatCompletionEndpoint
     : "https://api.shubiaobiao.cn/v1";
   // https://api.openai.com/v1
   // https://gptgod.cloud/v1
@@ -1060,7 +1019,7 @@ export async function readLocalImageURL(
 ): Promise<string> {
   const apiKey = openAiOptions.apiKey;
   const baseUrl =
-    openAiOptions.completionEndpoint || "https://api.openai.com/v1";
+    openAiOptions.chatCompletionEndpoint || "https://api.shubiaobiao.cn/v1";
   const model = openAiOptions.completionEngine || "gpt-4o-mini";
 
   // 检查图像路径是否有效
@@ -1191,3 +1150,5 @@ async function encodeImageToBase64(imagePath: string): Promise<string> {
     throw error;
   }
 }
+
+

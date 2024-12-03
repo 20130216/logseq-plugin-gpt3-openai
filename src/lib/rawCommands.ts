@@ -672,22 +672,21 @@ function parseImageSizeFromPrompt(prompt: string): string | null {
 //对toml文件中新增加的isParseJson参数进行处理
 export async function createRunGptsTomlCommand(command: Command) {
   return async (b: IHookEvent) => {
-    const openAISettings = getOpenaiSettings();
-    await validateSettings(openAISettings);
-
-    const currentBlock = await logseq.Editor.getBlock(b.uuid);
-    if (!currentBlock) {
-      console.error("No current block");
-      return;
-    }
-
-    if (currentBlock.content.trim().length === 0) {
-      showMessage("Empty Content", "warning");
-      console.warn("Blank page");
-      return;
-    }
-
     try {
+      const openAISettings = getOpenaiSettings();
+      await validateSettings(openAISettings);
+
+      const currentBlock = await logseq.Editor.getBlock(b.uuid);
+      if (!currentBlock) {
+        throw new Error("No current block");
+      }
+
+      if (currentBlock.content.trim().length === 0) {
+        showMessage("Empty Content", "warning");
+        console.warn("Blank page");
+        return;
+      }
+
       let result = "";
       let pendingImagePrompts = new Map<string, string>();
 
@@ -882,9 +881,9 @@ export async function createRunGptsTomlCommand(command: Command) {
         onImagePrompt,
         onStop
       );
-    } catch (error) {
-      console.error("Error in createRunGptsTomlCommand:", error);
-      showMessage("Error processing command", "error");
+    } catch (error: any) {
+      // 将所有错误统一交给 handleOpenAIError 处理
+      handleOpenAIError(error);
     }
   };
 }

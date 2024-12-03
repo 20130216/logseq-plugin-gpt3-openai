@@ -721,7 +721,7 @@ export async function createRunGptsTomlCommand(command: Command) {
               
               for (let i = 1; i <= n; i++) {
                 // 构建当前场景的完整提示词
-                const currentPrompt = `${prompt}，正在绘制第${i}幅子场景中...`;
+                const currentPrompt = `${prompt}，本次指令：绘制第${i}幅子场景`;
                 
                 // 构建完整的提示词对象
                 const currentPromptJson = {

@@ -25,65 +25,141 @@ import { Command } from "../ui/LogseqAI";
 export function handleOpenAIError(e: any) {
   let errorMessage = "";
 
-  // 检查是否是令牌额度用尽错误
-  if (e.message && e.message.includes("该令牌额度已用尽")) {
-    errorMessage = "您的 API 密钥额度已用尽，请更换新的 API 密钥或充值后再试。";
-    showMessage(errorMessage, "error");
-    return { error: errorMessage };
+  // 首先处理最常见的API密钥和额度相关错误
+  if (e.message && e.message.includes("API key")) {
+    console.error("API key error:", e.message);
+    showMessage("API 密钥无效或未设置，请检查您的 API 密钥配置！", "error");
+    return { error: "API 密钥无效或未设置，请检查您的 API 密钥配置！" };
   }
 
-  // 检查是否是认证错误
-  if (
-    e.response?.status === 401 ||
-    e.message.includes("Authorization Required")
-  ) {
-    errorMessage = "API 密钥无效或已过期，请检查您的 API 密钥设置。";
-    showMessage(errorMessage, "error");
-    return { error: errorMessage };
+  if (e.message && e.message.includes("insufficient_quota")) {
+    console.error("API quota exceeded:", e.message);
+    showMessage("API 使用额度已耗尽，请检查您的账户余额！", "error");
+    return { error: "API 使用额度已耗尽，请检查您的账户余额！" };
   }
 
-  // 其他错误处理
+  // 网络相关错误
   if (e instanceof TypeError && e.message === "Failed to fetch") {
-    errorMessage = "网络连接失败，请检查您的网络连接！";
-    showMessage(errorMessage, "error");
-  } else if (e.name === "AbortError") {
-    errorMessage = "请求超时，请稍后重试！";
-    showMessage(errorMessage, "error");
-  } else if (e instanceof Error) {
+    console.error(`Network error: ${e.message}`);
+    showMessage(
+      "网络连接失败或 API 配置有问题，请检查您的网络连接或 API 配置！",
+      "error"
+    );
+    errorMessage =
+      "网络连接失败或 API 配置有问题，请检查您的网络连接或 API 配置！";
+  } else if (e.name === "AbortError" || e.name === "TimeoutError") {
+    console.error(`Request timeout: ${e.message}`);
+    showMessage("请求超时，请检查网络连接并稍后重试！", "error");
+    errorMessage = "请求超时，请检查网络连接并稍后重试！";
+  } else if (
+    e.name === "DOMException" &&
+    e.message.includes("The user aborted a request")
+  ) {
+    console.error(`User aborted request: ${e.message}`);
+    showMessage("用户取消了请求", "warning");
+    errorMessage = "用户取消了请求";
+  }
+
+  // API响应错误
+  else if (e instanceof Error) {
     if (e.message.includes("Unexpected Content-Type")) {
-      errorMessage = "API 配置有误，请检查设置！";
-      showMessage(errorMessage, "error");
+      console.error(`Content-Type error: ${e.message}`);
+      showMessage("API 返回了不正确的内容类型，请检查 API 端点配置！", "error");
+      errorMessage = "API 返回了不正确的内容类型，请检查 API 端点配置！";
+    } else if (e.message.includes("Unexpected data format")) {
+      console.error(`Data parsing error: ${e.message}`);
+      showMessage("数据解析错误，请检查 API 返回的数据格式！", "error");
+      errorMessage = "数据解析错误，请检查 API 返回的数据格式！";
+    } else if (e.message.includes("stream timeout")) {
+      console.error(`Stream timeout: ${e.message}`);
+      showMessage("流式响应超时，请检查网络连接并稍后重试！", "error");
+      errorMessage = "流式响应超时，请检查网络连接并稍后重试！";
+    } else if (e.message === "未生成图像") {
+      console.error(`Image generation error: ${e.message}`);
+      showMessage("图像生成失败，请检查输入或 API 配置！", "error");
+      errorMessage = "图像生成失败，请检查输入或 API 配置！";
     } else {
-      errorMessage = "生成失败，请稍后重试！";
-      showMessage(errorMessage, "error");
+      console.error(`General error: ${e.message}`);
+      showMessage(`发生错误：${e.message}，请根据错误信息排查问题！`, "error");
+      errorMessage = `发生错误：${e.message}，请根据错误信息排查问题！`;
     }
+  }
+
+  // HTTP状态码错误
+  else if (e.response?.status) {
+    const httpStatus = e.response.status;
+    const errorDetail =
+      e.response.data?.error?.message || e.response.statusText;
+
+    switch (httpStatus) {
+      case 401:
+        console.error("Authentication error:", errorDetail);
+        showMessage("认证失败，请检查 API 密钥！", "error");
+        errorMessage = "认证失败，请检查 API 密钥！";
+        break;
+      case 429:
+        console.warn("Rate limit exceeded:", errorDetail);
+        showMessage(
+          "请求频率超限或额度不足，请降低请求频率或检查账户额度！",
+          "warning"
+        );
+        errorMessage = "请求频率超限或额度不足，请降低请求频率或检查账户额度！";
+        break;
+      case 400:
+        console.error("Bad request:", errorDetail);
+        showMessage(`请求参数错误：${errorDetail}`, "error");
+        errorMessage = `请求参数错误：${errorDetail}`;
+        break;
+      case 500:
+      case 502:
+      case 503:
+        console.error(`Server error (${httpStatus}):`, errorDetail);
+        showMessage("OpenAI 服务器暂时不可用，请稍后重试！", "error");
+        errorMessage = "OpenAI 服务器暂时不可用，请稍后重试！";
+        break;
+      default:
+        console.error(`HTTP error ${httpStatus}:`, errorDetail);
+        showMessage(`请求失败 (HTTP ${httpStatus}): ${errorDetail}`, "error");
+        errorMessage = `请求失败 (HTTP ${httpStatus}): ${errorDetail}`;
+    }
+  }
+
+  // 未知错误
+  else {
+    console.error("Unknown error:", e);
+    showMessage("发生未知错误，请检查控制台日志并稍后重试！", "error");
+    errorMessage = "发生未知错误，请检查控制台日志并稍后重试！";
   }
 
   return { error: errorMessage };
 }
 
-function validateSettings(settings: OpenAIOptions) {
-  if (!settings.apiKey) {
-    console.error("Need API key set in settings.");
-    showMessage("Need openai API key. Add one in plugin settings.", "error");
-    throw new Error("Need API key set in settings.");
-  }
+async function validateSettings(settings: OpenAIOptions) {
+  try {
+    if (!settings.apiKey) {
+      console.error("Need API key set in settings.");
+      showMessage("Need openai API key. Add one in plugin settings.", "error");
+      throw new Error("Need API key set in settings.");
+    }
 
-  if (
-    settings.dalleImageSize !== "256" &&
-    settings.dalleImageSize !== "256x256" &&
-    settings.dalleImageSize !== "512" &&
-    settings.dalleImageSize !== "512x512" &&
-    settings.dalleImageSize !== "1024" &&
-    settings.dalleImageSize !== "1024x1024" &&
-    settings.dalleImageSize !== "1024x1792" &&
-    settings.dalleImageSize !== "1792x1024"
-  ) {
-    console.error("DALL-E image size must be 256, 512, or 1024.");
-    showMessage("DALL-E image size must be 256, 512, or 1024.", "error");
-    throw new Error(
-      "DALL-E image size must be 256, 512, 1024, 1024x1792, or 179x1024"
-    );
+    if (
+      settings.dalleImageSize !== "256" &&
+      settings.dalleImageSize !== "256x256" &&
+      settings.dalleImageSize !== "512" &&
+      settings.dalleImageSize !== "512x512" &&
+      settings.dalleImageSize !== "1024" &&
+      settings.dalleImageSize !== "1024x1024" &&
+      settings.dalleImageSize !== "1024x1792" &&
+      settings.dalleImageSize !== "1792x1024"
+    ) {
+      console.error("DALL-E image size must be 256, 512, or 1024.");
+      showMessage("DALL-E image size must be 256, 512, or 1024.", "error");
+      throw new Error(
+        "DALL-E image size must be 256, 512, 1024, 1024x1792, or 179x1024"
+      );
+    }
+  } catch (error: unknown) {
+    throw handleOpenAIError(error);
   }
 }
 
@@ -95,7 +171,7 @@ export async function runGptBlock(b: IHookEvent) {
 
   const openAISettings = getOpenaiSettings();
 
-  // ���印实际使用的配置
+  // 印实际使用的配置
   console.log("实际使用的配置:", {
     apiKey: openAISettings.apiKey
       ? `${openAISettings.apiKey.substring(0, 10)}...`
@@ -105,7 +181,7 @@ export async function runGptBlock(b: IHookEvent) {
     // 添加其他相关配置...
   });
 
-  validateSettings(openAISettings);
+  await validateSettings(openAISettings);
 
   const currentBlock = await logseq.Editor.getBlock(b.uuid);
   if (!currentBlock) {
@@ -178,7 +254,7 @@ export async function runGptBlock(b: IHookEvent) {
 
 export async function runGptPage(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
-  validateSettings(openAISettings);
+  await validateSettings(openAISettings);
 
   const pageContents = await getPageContentFromBlock(b.uuid);
   const currentBlock = await logseq.Editor.getBlock(b.uuid);
@@ -237,7 +313,7 @@ export async function runGptsID(
 ) {
   // 获取用户在设置窗口中自定义的值；此前在main.tsx中已经通过logseq.useSettingsSchema(settingsSchema);进行了插件初始化时的默认设置
   const openAISettings = getOpenaiSettings();
-  validateSettings(openAISettings);
+  await validateSettings(openAISettings);
 
   const currentBlock = await logseq.Editor.getBlock(b.uuid);
   if (!currentBlock) {
@@ -597,7 +673,7 @@ function parseImageSizeFromPrompt(prompt: string): string | null {
 export async function createRunGptsTomlCommand(command: Command) {
   return async (b: IHookEvent) => {
     const openAISettings = getOpenaiSettings();
-    validateSettings(openAISettings);
+    await validateSettings(openAISettings);
 
     const currentBlock = await logseq.Editor.getBlock(b.uuid);
     if (!currentBlock) {
@@ -718,25 +794,28 @@ export async function createRunGptsTomlCommand(command: Command) {
               console.log(`计划生成 ${n} 幅图片`);
 
               let processedImages = [];
-              
+
               for (let i = 1; i <= n; i++) {
                 // 构建当前场景的完整提示词
                 const currentPrompt = `${prompt}，本次指令：绘制第${i}幅子场景`;
-                
+
                 // 构建完整的提示词对象
                 const currentPromptJson = {
                   prompt: currentPrompt,
                   size: size,
-                  n: 1
+                  n: 1,
                 };
 
                 // 记录当前正在处理的完整提示词
                 console.log(`\n开始处理第 ${i}/${n} 幅图片`);
-                console.log('当前完整提示词:', JSON.stringify(currentPromptJson, null, 2));
+                console.log(
+                  "当前完整提示词:",
+                  JSON.stringify(currentPromptJson, null, 2)
+                );
 
                 const placeholder = `正在生成第 ${i} 张图片，请稍后...\n`;
                 result += placeholder;
-                
+
                 if (insertBlock) {
                   await logseq.Editor.updateBlock(insertBlock.uuid, result);
                 }
@@ -752,10 +831,12 @@ export async function createRunGptsTomlCommand(command: Command) {
                     const imageFileName = await saveDalleImage(imageUrl.url);
                     processedImages.push(imageFileName);
                     console.log(`第 ${i}/${n} 幅图片生成完成`);
-                    
+
                     // 更新结果，保留提示词
-                    result = `提示词：\n\`\`\`json\n${jsonString}\n\`\`\`\n\n${processedImages.join('\n')}\n`;
-                    
+                    result = `提示词：\n\`\`\`json\n${jsonString}\n\`\`\`\n\n${processedImages.join(
+                      "\n"
+                    )}\n`;
+
                     if (insertBlock) {
                       await logseq.Editor.updateBlock(insertBlock.uuid, result);
                     }
@@ -815,7 +896,7 @@ export async function createRunGptsTomlCommand(command: Command) {
 
 export async function runDalleBlock(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
-  validateSettings(openAISettings);
+  await validateSettings(openAISettings);
 
   const currentBlock = await logseq.Editor.getBlock(b.uuid);
   if (!currentBlock) {

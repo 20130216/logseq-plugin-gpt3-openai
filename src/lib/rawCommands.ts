@@ -33,7 +33,10 @@ export function handleOpenAIError(e: any) {
   }
 
   // 检查是否是认证错误
-  if (e.response?.status === 401 || e.message.includes("Authorization Required")) {
+  if (
+    e.response?.status === 401 ||
+    e.message.includes("Authorization Required")
+  ) {
     errorMessage = "API 密钥无效或已过期，请检查您的 API 密钥设置。";
     showMessage(errorMessage, "error");
     return { error: errorMessage };
@@ -78,7 +81,9 @@ function validateSettings(settings: OpenAIOptions) {
   ) {
     console.error("DALL-E image size must be 256, 512, or 1024.");
     showMessage("DALL-E image size must be 256, 512, or 1024.", "error");
-    throw new Error("DALL-E image size must be 256, 512, 1024, 1024x1792, or 179x1024");
+    throw new Error(
+      "DALL-E image size must be 256, 512, 1024, 1024x1792, or 179x1024"
+    );
   }
 }
 
@@ -89,10 +94,12 @@ export async function runGptBlock(b: IHookEvent) {
   console.log("完整的设置内容:", logseq.settings);
 
   const openAISettings = getOpenaiSettings();
-  
-  // 打印实际使用的配置
+
+  // ���印实际使用的配置
   console.log("实际使用的配置:", {
-    apiKey: openAISettings.apiKey ? `${openAISettings.apiKey.substring(0, 10)}...` : 'undefined',
+    apiKey: openAISettings.apiKey
+      ? `${openAISettings.apiKey.substring(0, 10)}...`
+      : "undefined",
     completionEngine: openAISettings.completionEngine,
     chatCompletionEndpoint: openAISettings.chatCompletionEndpoint,
     // 添加其他相关配置...
@@ -256,7 +263,7 @@ export async function runGptsID(
 
     const newPrefix = `OpenAI GPTs：${commandName}\n`; // 新增：构建新的前缀
     if (openAISettings.injectPrefix && result.length === 0) {
-      result = openAISettings.injectPrefix + newPrefix; // 修改：将新前缀加入到现有前缀之后
+      result = openAISettings.injectPrefix + newPrefix; // 修改：将新缀加入到现有前缀之后
     } else {
       result = newPrefix; // 如果没有现有前缀，直接使用新前缀
     }
@@ -586,7 +593,7 @@ function parseImageSizeFromPrompt(prompt: string): string | null {
   };
 } */
 
-  //对toml文件中新增加的isParseJson参数进行处理
+//对toml文件中新增加的isParseJson参数进行处理
 export async function createRunGptsTomlCommand(command: Command) {
   return async (b: IHookEvent) => {
     const openAISettings = getOpenaiSettings();
@@ -684,88 +691,73 @@ export async function createRunGptsTomlCommand(command: Command) {
           const jsonMatch = fullResponse.match(/```json\s*([\s\S]*?)```/);
           if (jsonMatch && isParseJson) {
             let jsonString = jsonMatch[1].trim();
-            console.log("原始 JSON:", jsonString);
+            console.log("原始完整提示词:", jsonString);
 
-            // 预处理 JSON 字符串
             try {
-              // 1. 提取主要部分
-              const promptMatch = jsonString.match(/"prompt"\s*:\s*"([^"]*)"/)
-              const sizeMatch = jsonString.match(/"size"\s*:\s*"([^"]*)"/)
-              const nMatch = jsonString.match(/"n"\s*:\s*(\d+)/)
+              const promptMatch = jsonString.match(/"prompt"\s*:\s*"([^"]*)"/);
+              const sizeMatch = jsonString.match(/"size"\s*:\s*"([^"]*)"/);
+              const nMatch = jsonString.match(/"n"\s*:\s*(\d+)/);
 
               if (!promptMatch || !sizeMatch || !nMatch) {
                 throw new Error("无法提取必要的 JSON 属性");
               }
 
-              // 2. 构建新的 JSON 对象
               const promptObj = {
                 prompt: promptMatch[1],
                 size: sizeMatch[1],
-                n: parseInt(nMatch[1])
+                n: parseInt(nMatch[1]),
               };
 
-              console.log("解析后的提示词对象:", promptObj);
+              // 在响应块中显示完整的提示词
+              result = `提示词：\n\`\`\`json\n${jsonString}\n\`\`\`\n\n`;
+              if (insertBlock) {
+                await logseq.Editor.updateBlock(insertBlock.uuid, result);
+              }
 
               const { prompt, size = "1024x1024", n = 1 } = promptObj;
               console.log(`计划生成 ${n} 幅图片`);
 
-              // 先生成所有占位符
+              let processedImages = [];
+              
               for (let i = 1; i <= n; i++) {
+                // 构建当前场景的完整提示词
+                const currentPrompt = `${prompt}，正在绘制第${i}幅子场景中...`;
+                
+                // 构建完整的提示词对象
+                const currentPromptJson = {
+                  prompt: currentPrompt,
+                  size: size,
+                  n: 1
+                };
+
+                // 记录当前正在处理的完整提示词
+                console.log(`\n开始处理第 ${i}/${n} 幅图片`);
+                console.log('当前完整提示词:', JSON.stringify(currentPromptJson, null, 2));
+
                 const placeholder = `正在生成第 ${i} 张图片，请稍后...\n`;
                 result += placeholder;
+                
                 if (insertBlock) {
                   await logseq.Editor.updateBlock(insertBlock.uuid, result);
                 }
-              }
 
-              // 对每个场景分别生成图片
-              for (let i = 1; i <= n; i++) {
-                console.log(`开始处理第 ${i}/${n} 幅图片`);
-                const scenePrompt = {
-                  prompt: `${prompt}\n\n**当前绘制**：第${i}幅`,
-                  n: 1,
-                  size: size,
-                  response_format: "url",
-                  model: openAISettings.dalleModel,
-                };
-                
-                console.log(`第 ${i} 幅图片的完整提示词:`, scenePrompt.prompt);
-
-                const placeholder = `正在生成第 ${i} 张图片，请稍后...\n`;
-
-                // 生成图片
                 const imageUrl = await dallE_gptsToml(
-                  scenePrompt.prompt,
+                  currentPrompt,
                   openAISettings,
                   size
                 );
-                console.log(`第 ${i} 幅图片生成结果:`, imageUrl);
 
                 if ("url" in imageUrl) {
                   try {
-                    // 确保在第一张图片时添加额外等待时间
-                    if (i === 1) {
-                      await new Promise(resolve => setTimeout(resolve, 2000));
-                    }
-                    
                     const imageFileName = await saveDalleImage(imageUrl.url);
-                    console.log(`第 ${i} 幅图片保存成功:`, imageFileName);
+                    processedImages.push(imageFileName);
+                    console.log(`第 ${i}/${n} 幅图片生成完成`);
                     
-                    // 修改：增加文件系统操作的等待时间
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    // 更新结果，保留提示词
+                    result = `提示词：\n\`\`\`json\n${jsonString}\n\`\`\`\n\n${processedImages.join('\n')}\n`;
                     
-                    result = result.replace(placeholder, `${imageFileName}\n`);
                     if (insertBlock) {
                       await logseq.Editor.updateBlock(insertBlock.uuid, result);
-                      // 修改：增加块更新后的等待时间
-                      await new Promise(resolve => setTimeout(resolve, 1000));
-
-                      // 修改：为第一张图片添加额外的确认步骤
-                      if (i === 1) {
-                        // 第一张图片保存后，额外检查一次
-                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                      }
                     }
                   } catch (error) {
                     console.error(`第 ${i} 幅图片保存失败:`, error);
@@ -777,15 +769,6 @@ export async function createRunGptsTomlCommand(command: Command) {
                 } else {
                   console.error(`第 ${i} 幅图片生成失败:`, imageUrl.error);
                 }
-
-                // 修改：每张图片处理完后添加短暂等待
-                await new Promise(resolve => setTimeout(resolve, 500));
-              }
-
-              // 修改：最后再次更新块内容
-              if (insertBlock) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                await logseq.Editor.updateBlock(insertBlock.uuid, result);
               }
             } catch (parseError) {
               console.error("JSON 解析错误:", parseError);
@@ -823,10 +806,7 @@ export async function createRunGptsTomlCommand(command: Command) {
       showMessage("Error processing command", "error");
     }
   };
-} 
-
-
-  
+}
 
 /* const updateBlock = async (uuid: string, content: string) => {
   await logseq.Editor.updateBlock(uuid, content);

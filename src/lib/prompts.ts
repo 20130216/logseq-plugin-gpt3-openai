@@ -2,6 +2,7 @@ import { Command } from "../ui/LogseqAI";
 import toml from "toml";
 import prompts from "../prompts/prompts.toml?raw";
 import promptsGpts from "../prompts/prompts-gpts.toml?raw";
+import { handleOpenAIError } from "./rawCommands";
 
 //extract content from inside ```gpt-prompt codeblock
 function extractCodeblock(content: string) {
@@ -87,11 +88,17 @@ function promptsToCommands(prompts: Prompts): Command[] {
 }
 //prompts.toml 文件的内容被成功转换为 Command 对象数组。
 export async function loadBuiltInCommands() {
-  //使用 toml.parse 方法解析 prompts 字符串，得到的结果是一个 JavaScript 对象：
-  const parsedPrompts: Prompts = toml.parse(prompts);
-  //调用 promptsToCommands 函数，将解析后的对象转换为 Command 对象数组：
-  const parsedCommands = promptsToCommands(parsedPrompts);
-  return parsedCommands;
+  try {
+    //使用 toml.parse 方法解析 prompts 字符串，得到的结果是一个 JavaScript 对象：
+    const parsedPrompts: Prompts = toml.parse(prompts);
+    //调用 promptsToCommands 函数，将解析后的对象转换为 Command 对象数组：
+    const parsedCommands = promptsToCommands(parsedPrompts);
+    return parsedCommands;
+  } catch (error: any) {
+    // 使用 handleOpenAIError 统一处理错误
+    handleOpenAIError(error);
+    return [];
+  }
 }
 
 //新增函数，专门处理这个新增的命令文件"../prompts/prompts-gpts.toml?raw"
@@ -106,8 +113,9 @@ export async function loadBuiltInGptsTomlCommands() {
     console.log("Parsed commands:", parsedCommands); // 添加日志
 
     return parsedCommands;
-  } catch (error) {
-    console.error("Error loading built-in gpts toml commands:", error); // 添加日志
-    throw error;
+  } catch (error: any) {
+    // 使用 handleOpenAIError 统一处理错误
+    handleOpenAIError(error);
+    return [];
   }
 }

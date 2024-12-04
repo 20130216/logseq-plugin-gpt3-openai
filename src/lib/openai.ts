@@ -258,7 +258,7 @@ function getDataFromStreamValue(value: string): any[] {
           return [];
         }
       } catch (error) {
-        console.debug("从流中解析 JSON 失败:", line, error); // 调试输出解失败的信息
+        console.debug("从流中解析 JSON 失败:", line, error); // 调试输出解失败的信
         return [];
       }
     }
@@ -402,7 +402,7 @@ function trimLeadingWhitespace(text: string): string {
 // 1.异步处理：使用 async/await 语法使代码更洁、读。
 // 2.空值检查：增加了对 value 是否为 null 或 undefined 的检查，避免因空值导致的运行时错误。
 // 3.超时机制：增加了超时机制，防止长时间挂起，提高系统的健壮性和用户体验。
-// 4.统一错误提示：无论错误的具体���因是什么，都提供一个统一的用户友好的错误提示信息。
+// 4.统一错误提示：无论错误的具体因是什么，都提供一个统一的用户友好的错误提示信息。
 
 export async function openAIWithStreamGptsID(
   input: string,
@@ -688,160 +688,162 @@ export async function openAIWithStreamGptsToml(
   onImagePrompt: (imagePrompt: string) => void,
   onStop: () => void
 ): Promise<string | { error: string } | null> {
-  // 清理输入，移除系统提示词
-  const cleanedInput = cleanUserInput(input);
-
-  // 添加输入内容检查
-  console.log("输入内容检查:", {
-    input,
-    containsViolence: /暴|击|杀|死|血/.test(input),
-    containsSensitive: /老虎|吃|追|怒/.test(input),
-  });
-
-  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
-  const engine = options.completionEngine!;
-
-  const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [
-    { role: "user", content: input },
-  ];
-  if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
-    inputMessages.unshift({
-      role: "system",
-      content: openAiOptions.chatPrompt,
-    });
-  }
-  const body = {
-    messages: inputMessages,
-    temperature: options.temperature,
-    max_tokens: options.maxTokens,
-    top_p: 1,
-    frequency_penalty: 0,
-    presence_penalty: 0,
-    model: engine,
-    stream: true,
-  };
-
   try {
-    const response = await fetch(
-      `${options.chatCompletionEndpoint}/chat/completions`,
-      {
-        method: "POST",
-        body: JSON.stringify(body),
-        headers: {
-          Authorization: `Bearer ${options.apiKey}`,
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-        },
-        signal: AbortSignal.timeout(120000),
+    const cleanedInput = cleanUserInput(input);
+
+    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+    const engine = options.completionEngine!;
+
+    const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [
+      { role: "user", content: input },
+    ];
+    if (openAiOptions.chatPrompt && openAiOptions.chatPrompt.length > 0) {
+      inputMessages.unshift({
+        role: "system",
+        content: openAiOptions.chatPrompt,
+      });
+    }
+    const body = {
+      messages: inputMessages,
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      top_p: 1,
+      frequency_penalty: 0,
+      presence_penalty: 0,
+      model: engine,
+      stream: true,
+    };
+
+    try {
+      const response = await fetch(
+        `${options.chatCompletionEndpoint}/chat/completions`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: {
+            Authorization: `Bearer ${options.apiKey}`,
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+          },
+          signal: AbortSignal.timeout(120000),
+        }
+      );
+
+      // 添加响应检查
+      console.log("响应状态检查:", {
+        status: response.status,
+        ok: response.ok,
+        contentType: response.headers.get("Content-Type"),
+      });
+
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        console.log("错误响应内容:", errorMessage);
+        return handleOpenAIError(new Error(errorMessage));
       }
-    );
 
-    // 添加响应检查
-    console.log("响应状态检查:", {
-      status: response.status,
-      ok: response.ok,
-      contentType: response.headers.get("Content-Type"),
-    });
+      if (response.headers.get("Content-Type") !== "text/event-stream") {
+        const errorMessage = `Unexpected Content-Type: ${response.headers.get(
+          "Content-Type"
+        )}`;
+        console.error(errorMessage);
+        return handleOpenAIError(new Error(errorMessage));
+      }
 
-    if (!response.ok) {
-      const errorMessage = await response.text();
-      console.log("错误响应内容:", errorMessage);
-      return handleOpenAIError(new Error(errorMessage));
-    }
+      if (response.body) {
+        const reader = response.body
+          .pipeThrough(new TextDecoderStream())
+          .getReader();
+        let result = "";
+        let currentParagraph = "";
 
-    if (response.headers.get("Content-Type") !== "text/event-stream") {
-      const errorMessage = `Unexpected Content-Type: ${response.headers.get(
-        "Content-Type"
-      )}`;
-      console.error(errorMessage);
-      return handleOpenAIError(new Error(errorMessage));
-    }
-
-    if (response.body) {
-      const reader = response.body
-        .pipeThrough(new TextDecoderStream())
-        .getReader();
-      let result = "";
-      let currentParagraph = "";
-
-      const readStream = async (): Promise<any> => {
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) {
-            reader.cancel();
-            if (currentParagraph.trim()) {
-              console.log(
-                "来自openAIWithStreamGptsToml函数中的完整提示词如下:",
-                currentParagraph
-              );
-              const { hasRequest, prompt } = checkAndExtractImagePrompt(
-                currentParagraph.trim(),
-                cleanedInput,
-                true
-              );
-              if (hasRequest) {
-                result += currentParagraph + "\n为该段落绘图中，请稍后...\n";
-                onContent(currentParagraph + "\n为该段落绘图中，请稍后...\n");
-                onImagePrompt(prompt);
-              } else {
-                result += currentParagraph;
-                onContent(currentParagraph);
+        const readStream = async (): Promise<any> => {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              reader.cancel();
+              if (currentParagraph.trim()) {
+                console.log(
+                  "来自openAIWithStreamGptsToml函数中的完整提示词如下:",
+                  currentParagraph
+                );
+                const { hasRequest, prompt } = checkAndExtractImagePrompt(
+                  currentParagraph.trim(),
+                  cleanedInput,
+                  true
+                );
+                if (hasRequest) {
+                  result += currentParagraph + "\n为该段落绘图中，请稍后...\n";
+                  onContent(currentParagraph + "\n为该段落绘图中，请稍后...\n");
+                  onImagePrompt(prompt);
+                } else {
+                  result += currentParagraph;
+                  onContent(currentParagraph);
+                }
               }
+              onStop();
+              return result;
             }
-            onStop();
-            return result;
-          }
 
-          if (value) {
-            const data = getDataFromStreamValue(value);
-            if (data && data.length > 0) {
-              for (const item of data) {
-                if (item.choices[0]?.delta?.content) {
-                  const content = item.choices[0].delta.content;
-                  currentParagraph += content;
+            if (value) {
+              const data = getDataFromStreamValue(value);
+              if (data && data.length > 0) {
+                for (const item of data) {
+                  if (item.choices[0]?.delta?.content) {
+                    const content = item.choices[0].delta.content;
+                    currentParagraph += content;
 
-                  if (content.includes("\n\n") || content.includes("\n### ")) {
-                    const paragraphs = currentParagraph.split(/\n\n|\n### /);
-                    for (let i = 0; i < paragraphs.length - 1; i++) {
-                      const paragraph = paragraphs[i].trim();
-                      if (paragraph) {
-                        console.log("完整段落:", paragraph);
-                        const { hasRequest, prompt } =
-                          checkAndExtractImagePrompt(
-                            paragraph,
-                            cleanedInput,
-                            false
-                          );
-                        if (hasRequest) {
-                          result += paragraph + "\n为该段落绘图中，请稍后...\n";
-                          onContent(
-                            paragraph + "\n为该段落绘图中，请稍后...\n"
-                          );
-                          onImagePrompt(prompt);
-                        } else {
-                          result += paragraph + "\n\n";
-                          onContent(paragraph + "\n\n");
+                    if (content.includes("\n\n") || content.includes("\n### ")) {
+                      const paragraphs = currentParagraph.split(/\n\n|\n### /);
+                      for (let i = 0; i < paragraphs.length - 1; i++) {
+                        const paragraph = paragraphs[i].trim();
+                        if (paragraph) {
+                          console.log("完整段落:", paragraph);
+                          const { hasRequest, prompt } =
+                            checkAndExtractImagePrompt(
+                              paragraph,
+                              cleanedInput,
+                              false
+                            );
+                          if (hasRequest) {
+                            result += paragraph + "\n为该段落绘图中，请稍后...\n";
+                            onContent(
+                              paragraph + "\n为该段落绘图中，请稍后...\n"
+                            );
+                            onImagePrompt(prompt);
+                          } else {
+                            result += paragraph + "\n\n";
+                            onContent(paragraph + "\n\n");
+                          }
                         }
                       }
+                      currentParagraph = paragraphs[paragraphs.length - 1];
                     }
-                    currentParagraph = paragraphs[paragraphs.length - 1];
                   }
                 }
               }
             }
           }
-        }
-      };
+        };
 
-      return readStream().catch((error) => {
-        console.error("读取流时发生错误:", error);
-        return handleOpenAIError(error);
-      });
+        return readStream().catch((error) => {
+          console.error("读取流时发生错误:", error);
+          return handleOpenAIError(error);
+        });
+      }
+      return null;
+    } catch (e: any) {
+      console.error("请求异常:", e);
+      return handleOpenAIError(e);
     }
-    return null;
-  } catch (e: any) {
-    console.error("请求异常:", e);
-    return handleOpenAIError(e);
+  } catch (error: any) {
+    // 如果是内容审核错误，直接抛出，让上层处理
+    if (error.type || error.silent) {
+      throw error;
+    }
+    // 其他未知错误才显示通用错误消息
+    console.error("Error in openAIWithStreamGptsToml:", error);
+    throw new Error("发生未知错误，请检查控制台日志并稍后重试");
   }
 }
 

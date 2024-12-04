@@ -161,14 +161,15 @@ export async function openAI(
   input: string,
   openAiOptions: OpenAIOptions
 ): Promise<string | null> {
-  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
-  const engine = options.completionEngine!;
-
-  const openai = new OpenAI({
-    apiKey: options.apiKey,
-    baseURL: options.chatCompletionEndpoint,
-  });
   try {
+    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+    const engine = options.completionEngine!;
+
+    const openai = new OpenAI({
+      apiKey: options.apiKey,
+      baseURL: options.chatCompletionEndpoint,
+    });
+
     if (engine.startsWith("gpt-3.5") || engine.startsWith("gpt-4")) {
       const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [
         { role: "user", content: input },
@@ -230,13 +231,10 @@ export async function openAI(
         return null;
       }
     }
-  } catch (e: any) {
-    if (e?.response?.data?.error) {
-      console.error(e?.response?.data?.error);
-      throw new Error(e?.response?.data?.error?.message);
-    } else {
-      throw e;
-    }
+  } catch (error: any) {
+    // 使用 handleOpenAIError 统一处理错误
+    const result = handleOpenAIError(error);
+    throw new Error(result.error);
   }
 }
 
@@ -252,7 +250,7 @@ function getDataFromStreamValue(value: string): any[] {
         return []; // 返回空数组以跳过 [DONE] 标记
       }
       try {
-        // 检查 JSON 否完整
+        // 检查 JSON 完整
         if (data.startsWith("{") && data.endsWith("}")) {
           return JSON.parse(data);
         } else {
@@ -260,7 +258,7 @@ function getDataFromStreamValue(value: string): any[] {
           return [];
         }
       } catch (error) {
-        console.debug("从流中解析 JSON 失败:", line, error); // 调试输出解析失败的信息
+        console.debug("从流中解析 JSON 失败:", line, error); // 调试输出解失败的信息
         return [];
       }
     }
@@ -282,10 +280,10 @@ export async function openAIWithStream(
   onContent: (content: string) => void,
   onStop: () => void
 ): Promise<string | null> {
-  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
-  const engine = options.completionEngine!;
-
   try {
+    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+    const engine = options.completionEngine!;
+
     console.log(
       "Sending request to:",
       `${options.chatCompletionEndpoint}/chat/completions`
@@ -316,106 +314,79 @@ export async function openAIWithStream(
           "Content-Type": "application/json",
           Accept: "text/event-stream",
         },
-        signal: AbortSignal.timeout(120000), // 设置请求超时
+        signal: AbortSignal.timeout(120000),
       }
     );
 
-    console.log("Response received:", response);
-
     if (!response.ok) {
-      const errorMessage = await response.text();
-      console.error(
-        "Request failed with status:",
-        response.status,
-        "ErrorMessage:",
-        errorMessage
+      throw new Error(
+        `请求失败，状态码: ${response.status}，错误信息: ${await response.text()}`
       );
-      handleOpenAIError(
-        new Error(
-          `请求失败，状态码: ${response.status}，错误信息: ${errorMessage}`
-        )
-      );
-      return null;
     }
 
-    // 检查 Content-Type 是否为 text/event-stream
     if (response.headers.get("Content-Type") !== "text/event-stream") {
-      console.error(
-        "Unexpected Content-Type:",
-        response.headers.get("Content-Type")
+      throw new Error(
+        `Unexpected Content-Type: ${response.headers.get("Content-Type")}`
       );
-      handleOpenAIError(
-        new Error(
-          `Unexpected Content-Type: ${response.headers.get("Content-Type")}`
-        )
-      );
-      return null;
     }
 
-    if (response.body) {
-      const reader = response.body
-        .pipeThrough(new TextDecoderStream())
-        .getReader();
-      let result = "";
+    if (!response.body) {
+      throw new Error("Response body is empty");
+    }
 
-      const readStream = async (): Promise<any> => {
-        try {
-          while (true) {
-            const { value, done } = await reader.read(); // 读取流中的下一个值
-            if (done) {
-              reader.cancel(); // 如果结束，取消读取器
-              onStop(); // 调用停止回调
-              return result; // 返回终结果
-            }
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    let result = "";
 
-            if (value !== null && value !== undefined) {
-              // 检查值是否为 null 或 undefined
-              // console.log("Received stream chunk:", value); // 添加日志记录
-              const data = getDataFromStreamValue(value); // 解析流数据
-              // console.log("Parsed data:", data); // 添加日志记录
+    const readStream = async (): Promise<any> => {
+      try {
+        while (true) {
+          const { value, done } = await reader.read(); // 读取流中的下一个值
+          if (done) {
+            reader.cancel(); // 如果结束，取消读取器
+            onStop(); // 调用停止回调
+            return result; // 返回终结果
+          }
 
-              if (Array.isArray(data)) {
-                for (let item of data) {
-                  if (
-                    item.choices &&
-                    item.choices[0] &&
-                    item.choices[0].delta &&
-                    item.choices[0].delta.content
-                  ) {
-                    const res = item.choices[0].delta.content;
-                    result += res; // 更新最终结果
-                    onContent(res); // 调用内容回调
-                  } else {
-                    console.warn("Received unexpected data format:", item);
-                  }
+          if (value !== null && value !== undefined) {
+            // 检查值是否为 null 或 undefined
+            // console.log("Received stream chunk:", value); // 添加日志记录
+            const data = getDataFromStreamValue(value); // 解析流数据
+            // console.log("Parsed data:", data); // 添加日志记录
+
+            if (Array.isArray(data)) {
+              for (let item of data) {
+                if (
+                  item.choices &&
+                  item.choices[0] &&
+                  item.choices[0].delta &&
+                  item.choices[0].delta.content
+                ) {
+                  const res = item.choices[0].delta.content;
+                  result += res; // 更新最终结果
+                  onContent(res); // 调用内容回调
+                } else {
+                  console.warn("Received unexpected data format:", item);
                 }
-              } else {
-                console.warn("Received unexpected data format:", data);
               }
+            } else {
+              console.warn("Received unexpected data format:", data);
             }
           }
-        } catch (error) {
-          console.error("Error reading stream:", error);
-          handleOpenAIError(error);
-          reader.cancel(); // 取消读器
-          onStop(); // 调停止回调
-          return null;
         }
-      };
+      } catch (error) {
+        reader.cancel();
+        onStop();
+        throw error; // 向上抛出错误
+      }
+    };
 
-      return readStream().catch((error) => {
-        console.error("Read stream promise rejected:", error);
-        handleOpenAIError(error);
-        return null;
-      });
-    } else {
-      console.error("Response body is empty");
-      handleOpenAIError(new Error("Response body is empty"));
-      return null;
-    }
-  } catch (e: any) {
-    console.error("Catch block in openAIWithStream:", e);
-    handleOpenAIError(e);
+    return readStream().catch((error) => {
+      throw error; // 向上抛出错误
+    });
+
+  } catch (error: any) {
+    // 使用 handleOpenAIError 统一处理错误
+    handleOpenAIError(error);
     return null;
   }
 }
@@ -428,10 +399,10 @@ function trimLeadingWhitespace(text: string): string {
 // 终局函数2:runGptBlock中的openAIWithStreamGptsID的机器注释+异常分类处理的定稿版（10.26号上午定稿，含10种异常分类处理场景）；共进行了30-40次左测试,很少出错！！！
 // （10.26号下午）特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")两种额外的异常处理方式;
 
-// 1.异步处理：使用 async/await 语法使代码更简洁、读。
+// 1.异步处理：使用 async/await 语法使代码更洁、读。
 // 2.空值检查：增加了对 value 是否为 null 或 undefined 的检查，避免因空值导致的运行时错误。
 // 3.超时机制：增加了超时机制，防止长时间挂起，提高系统的健壮性和用户体验。
-// 4.统一错误提示：无论错误的具体原因是什么，都提供一个统一的用户友好的错误提示信息。
+// 4.统一错误提示：无论错误的具体���因是什么，都提供一个统一的用户友好的错误提示信息。
 
 export async function openAIWithStreamGptsID(
   input: string,
@@ -439,9 +410,9 @@ export async function openAIWithStreamGptsID(
   onContent: (content: string) => void,
   onStop: () => void
 ): Promise<string | null> {
-  const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
-
   try {
+    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+
     const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [
       { role: "user", content: input },
     ];
@@ -481,60 +452,54 @@ export async function openAIWithStreamGptsID(
       );
 
       if (!fetchResponse.ok) {
-        const errorMessage = await fetchResponse.text();
-        console.error(
-          "Request failed with status:",
-          fetchResponse.status,
-          "statusText:",
-          fetchResponse.statusText,
-          "ErrorMessage:",
-          errorMessage
-        );
-        return handleOpenAIError(
-          new Error(
-            `请求失败，状态码: ${fetchResponse.status}，错误信息: ${errorMessage}`
-          )
+        throw new Error(
+          `请求失败，状态码: ${fetchResponse.status}，错误信息: ${await fetchResponse.text()}`
         );
       }
 
       if (fetchResponse.headers.get("Content-Type") !== "text/event-stream") {
-        const errorMessage = `Unexpected Content-Type: ${fetchResponse.headers.get(
-          "Content-Type"
-        )}`;
-        console.error(errorMessage);
-        return handleOpenAIError(new Error(errorMessage));
+        throw new Error(
+          `Unexpected Content-Type: ${fetchResponse.headers.get("Content-Type")}`
+        );
       }
 
-      if (fetchResponse.body) {
-        const reader = fetchResponse.body
-          .pipeThrough(new TextDecoderStream())
-          .getReader();
-        let result = "";
-        let currentParagraph = "";
+      if (!fetchResponse.body) {
+        throw new Error("响应体为空");
+      }
 
-        const readStream = async (): Promise<any> => {
+      const reader = fetchResponse.body
+        .pipeThrough(new TextDecoderStream())
+        .getReader();
+      let result = "";
+      let currentParagraph = "";
+
+      const readStream = async (): Promise<any> => {
+        try {
           while (true) {
-            const { value, done } = await reader.read(); // 读取流中的下一个值
+            const { value, done } = await reader.read();
             if (done) {
-              reader.cancel(); // 如果流结束，取消读取器
+              reader.cancel();
               if (currentParagraph.trim()) {
-                console.log("来自openAIWithStreamGptsID函数中的完整提示词如下:", currentParagraph);
+                console.log(
+                  "来自openAIWithStreamGptsID函数中的完整提示词如下:",
+                  currentParagraph
+                );
                 result += currentParagraph;
                 onContent(currentParagraph);
               }
-              onStop(); // 调用停止回调
+              onStop();
               return Promise.resolve({
                 choices: [{ message: { content: result } }],
-              }); // 返回最终结果
+              });
             }
 
             if (value !== null && value !== undefined) {
-              const data = getDataFromStreamValue(value); // 解析流数据
+              const data = getDataFromStreamValue(value);
               if (data && data[0]) {
                 let res = "";
                 for (let i = 0; i < data.length; i++) {
                   if (data[i]) {
-                    res += data[i].choices[0]?.delta?.content || ""; // 将解析的数据累加到结果中
+                    res += data[i].choices[0]?.delta?.content || "";
                   }
                 }
                 currentParagraph += res;
@@ -555,28 +520,23 @@ export async function openAIWithStreamGptsID(
             }
 
             const timeoutId = setTimeout(() => {
-              reader.cancel(); // 如果超时，取消读取器
-              onStop(); // 调用停止回调
-              console.error("流超时"); // 打印错误信息
-              handleOpenAIError(new Error("流超时"));
-              return null;
+              reader.cancel();
+              onStop();
+              throw new Error("流超时");
             }, 120000);
 
-            const promise = readStream(); // 递归调用读取流
-            promise.then(() => clearTimeout(timeoutId)); // 如果流成功完成，清除超时定时器
+            const promise = readStream();
+            promise.then(() => clearTimeout(timeoutId));
             return promise;
           }
-        };
+        } catch (error) {
+          reader.cancel();
+          onStop();
+          throw error;
+        }
+      };
 
-        return readStream().catch((error) => {
-          console.error("读取流时生错误:", error); // 打印读取流时的错误信息
-          handleOpenAIError(error);
-          return null;
-        });
-      } else {
-        handleOpenAIError(new Error("响应体为空"));
-        return null;
-      }
+      return readStream();
     }, retryOptions);
 
     if (response) {
@@ -594,17 +554,12 @@ export async function openAIWithStreamGptsID(
     }
 
     return null;
-  } catch (e: any) {
-    const errorMessage = e.name === "AbortError" ? "网络请求超时" : e.message;
-    console.error(errorMessage);
-    const errorMessageElement = document.getElementById("error-message");
-    if (errorMessageElement) {
-      errorMessageElement.textContent = errorMessage;
-    }
-    handleOpenAIError(new Error(errorMessage));
+  } catch (error: any) {
+    // 使用 handleOpenAIError 统一处理错误
+    handleOpenAIError(error);
     return null;
   } finally {
-    onStop(); // 确保在任何情况下都调用 onStop 回调
+    onStop();
   }
 }
 
@@ -740,7 +695,7 @@ export async function openAIWithStreamGptsToml(
   console.log("输入内容检查:", {
     input,
     containsViolence: /暴|击|杀|死|血/.test(input),
-    containsSensitive: /老虎|吃|追|怒/.test(input)
+    containsSensitive: /老虎|吃|追|怒/.test(input),
   });
 
   const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
@@ -785,7 +740,7 @@ export async function openAIWithStreamGptsToml(
     console.log("响应状态检查:", {
       status: response.status,
       ok: response.ok,
-      contentType: response.headers.get("Content-Type")
+      contentType: response.headers.get("Content-Type"),
     });
 
     if (!response.ok) {
@@ -795,13 +750,17 @@ export async function openAIWithStreamGptsToml(
     }
 
     if (response.headers.get("Content-Type") !== "text/event-stream") {
-      const errorMessage = `Unexpected Content-Type: ${response.headers.get("Content-Type")}`;
+      const errorMessage = `Unexpected Content-Type: ${response.headers.get(
+        "Content-Type"
+      )}`;
       console.error(errorMessage);
       return handleOpenAIError(new Error(errorMessage));
     }
 
     if (response.body) {
-      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      const reader = response.body
+        .pipeThrough(new TextDecoderStream())
+        .getReader();
       let result = "";
       let currentParagraph = "";
 
@@ -811,7 +770,10 @@ export async function openAIWithStreamGptsToml(
           if (done) {
             reader.cancel();
             if (currentParagraph.trim()) {
-              console.log("来自openAIWithStreamGptsToml函数中的完整提示词如下:", currentParagraph);
+              console.log(
+                "来自openAIWithStreamGptsToml函数中的完整提示词如下:",
+                currentParagraph
+              );
               const { hasRequest, prompt } = checkAndExtractImagePrompt(
                 currentParagraph.trim(),
                 cleanedInput,
@@ -844,14 +806,17 @@ export async function openAIWithStreamGptsToml(
                       const paragraph = paragraphs[i].trim();
                       if (paragraph) {
                         console.log("完整段落:", paragraph);
-                        const { hasRequest, prompt } = checkAndExtractImagePrompt(
-                          paragraph,
-                          cleanedInput,
-                          false
-                        );
+                        const { hasRequest, prompt } =
+                          checkAndExtractImagePrompt(
+                            paragraph,
+                            cleanedInput,
+                            false
+                          );
                         if (hasRequest) {
                           result += paragraph + "\n为该段落绘图中，请稍后...\n";
-                          onContent(paragraph + "\n为该段落绘图中，请稍后...\n");
+                          onContent(
+                            paragraph + "\n为该段落绘图中，请稍后...\n"
+                          );
                           onImagePrompt(prompt);
                         } else {
                           result += paragraph + "\n\n";
@@ -886,7 +851,10 @@ export async function dallE_gptsToml(
   size: string
 ): Promise<{ url: string } | { error: string }> {
   try {
-    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+    const options = {
+      ...OpenAIDefaults(openAiOptions.apiKey),
+      ...openAiOptions,
+    };
 
     const openai = new OpenAI({
       apiKey: options.apiKey,
@@ -896,7 +864,7 @@ export async function dallE_gptsToml(
 
     // 处理图片尺寸
     let imageSizeRequest: OpenAI.ImageGenerateParams["size"] = "1024x1024";
-    
+
     if (size.includes("x")) {
       // 验证尺寸格式
       const validSizes = [
@@ -904,9 +872,9 @@ export async function dallE_gptsToml(
         "512x512",
         "1024x1024",
         "1024x1792",
-        "1792x1024"
+        "1792x1024",
       ] as const;
-      
+
       if (validSizes.includes(size as any)) {
         imageSizeRequest = size as OpenAI.ImageGenerateParams["size"];
       }
@@ -915,7 +883,7 @@ export async function dallE_gptsToml(
       const sizeMap: Record<string, OpenAI.ImageGenerateParams["size"]> = {
         "256": "256x256",
         "512": "512x512",
-        "1024": "1024x1024"
+        "1024": "1024x1024",
       };
       imageSizeRequest = sizeMap[size] || "1024x1024";
     }
@@ -933,17 +901,17 @@ export async function dallE_gptsToml(
       () => openai.images.generate(imageParameters),
       retryOptions
     );
-    
+
     const imageUrl = response.data[0]?.url;
     if (!imageUrl) {
       throw new Error("No image URL in response");
     }
-    
+
     return { url: imageUrl };
-  } catch (error: unknown) {
-    console.error("Error in dallE_gptsToml:", error);
-    const errorMessage = error instanceof Error ? error.message : "Failed to generate image";
-    return { error: errorMessage };
+  } catch (error: any) {
+    // 使用 handleOpenAIError 统一处理错误
+    const result = handleOpenAIError(error);
+    return { error: result.error };
   }
 }
 
@@ -1017,48 +985,47 @@ export async function readLocalImageURL(
   imagePath: string,
   openAiOptions: OpenAIOptions
 ): Promise<string> {
-  const apiKey = openAiOptions.apiKey;
-  const baseUrl =
-    openAiOptions.chatCompletionEndpoint || "https://api.shubiaobiao.cn/v1";
-  const model = openAiOptions.completionEngine || "gpt-4o-mini";
-
-  // 检查图像路径是否有效
-  if (!imagePath) {
-    throw new Error("Invalid image path provided.");
-  }
-
-  // 读取本地图片并编码为 Base64
-  const base64Image = await encodeImageToBase64(imagePath);
-
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${apiKey}`,
-  };
-
-  const message = {
-    role: "user",
-    content: [
-      {
-        type: "text",
-        text: "What's in this image? 请详细读一下该图片",
-      },
-      {
-        type: "image_url",
-        image_url: {
-          url: `data:image/jpeg;base64,${base64Image}`,
-        },
-      },
-    ],
-  };
-
-  const body = JSON.stringify({
-    model: model,
-    messages: [message],
-    max_tokens: 300,
-  });
-
   try {
-    // 发送 API 请求
+    const apiKey = openAiOptions.apiKey;
+    const baseUrl =
+      openAiOptions.chatCompletionEndpoint || "https://api.shubiaobiao.cn/v1";
+    const model = openAiOptions.completionEngine || "gpt-4o-mini";
+
+    // 检查图像路径是否有效
+    if (!imagePath) {
+      throw new Error("Invalid image path provided.");
+    }
+
+    // 读取本地图片并编码为 Base64
+    const base64Image = await encodeImageToBase64(imagePath);
+
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    };
+
+    const message = {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "What's in this image? 请详细读一下该图片",
+        },
+        {
+          type: "image_url",
+          image_url: {
+            url: `data:image/jpeg;base64,${base64Image}`,
+          },
+        },
+      ],
+    };
+
+    const body = JSON.stringify({
+      model: model,
+      messages: [message],
+      max_tokens: 300,
+    });
+
     const response = await fetch(baseUrl + "/chat/completions", {
       method: "POST",
       headers: headers,
@@ -1071,9 +1038,10 @@ export async function readLocalImageURL(
 
     const jsonResponse = await response.json();
     return jsonResponse.choices[0].message.content;
-  } catch (error) {
-    console.error("Error in readLocalImageURL:", error);
-    throw error; // 重新抛出错误
+  } catch (error: any) {
+    // 使用 handleOpenAIError 统一处理错误
+    const result = handleOpenAIError(error);
+    throw new Error(result.error);
   }
 }
 
@@ -1145,10 +1113,9 @@ async function encodeImageToBase64(imagePath: string): Promise<string> {
       const base64Image = buffer.toString("base64");
       return base64Image;
     }
-  } catch (error) {
-    console.error("Failed to encode image to Base64:", error);
-    throw error;
+  } catch (error: any) {
+    // 使用 handleOpenAIError 统一处理错误
+    const result = handleOpenAIError(error);
+    throw new Error(result.error);
   }
 }
-
-

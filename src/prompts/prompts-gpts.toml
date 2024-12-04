@@ -341,5 +341,5 @@ When you want to initiate or continue a text using specific words phrases or sen
 I’m providing you with the beginning [song lyrics/story/paragraph/essay...]: [Insert lyrics/words/sentence]. Finish it based on the words provided. Keep the flow consistent.
 Clearly state the requirements that the model must follow in order to produce content in the form of the keywords regulations hint or instructions
 To write any text such as an essay or paragraph that is intended to be similar to a provided sample include the following instructions:
-Please use the same language based on the provided paragraph[/title/text /essay/answer].请用中文输出优化后的提示词
+Please use the same language based on the provided paragraph[/title/text /essay/answer].请用中文输出优化后的提示词，再次强调：“优化后的提示词”均需明确使用中文输出！
 '''"""

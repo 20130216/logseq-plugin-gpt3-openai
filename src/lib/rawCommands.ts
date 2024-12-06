@@ -26,22 +26,28 @@ import { validateContent } from "./contentModeration";
 export function handleOpenAIError(e: any) {
   // 如果是内容审核错误，直接显示对应的警告
   if (e.type && e.message) {
-    const severity = e.level === 'extreme' ? 'error' : e.level === 'mild' ? 'warning' : 'warning';
-    const message = e.message + (e.words ? ` ------"${e.words.join('", "')}"` : '');
+    const severity =
+      e.level === "extreme"
+        ? "error"
+        : e.level === "mild"
+        ? "warning"
+        : "warning";
+    const message =
+      e.message + (e.words ? ` ------"${e.words.join('", "')}"` : "");
     showMessage(message, severity);
     return { error: message };
   }
 
   // 如果是 API 错误，检查是否包含已知的错误信息
   if (e.error?.type && e.error?.message) {
-    showMessage(e.error.message, 'error');
+    showMessage(e.error.message, "error");
     return { error: e.error.message };
   }
 
   // 如果是未知错误但包含了类型和消息
-  if (typeof e === 'object' && e !== null) {
+  if (typeof e === "object" && e !== null) {
     if (e.type && e.message) {
-      showMessage(e.message, 'error');
+      showMessage(e.message, "error");
       return { error: e.message };
     }
   }
@@ -68,7 +74,10 @@ export function handleOpenAIError(e: any) {
     return { error: "请求超时" };
   }
 
-  if (e.name === "DOMException" && e.message.includes("The user aborted a request")) {
+  if (
+    e.name === "DOMException" &&
+    e.message.includes("The user aborted a request")
+  ) {
     showMessage("用户取消了请求", "warning");
     return { error: "用户取消请求" };
   }
@@ -139,15 +148,21 @@ export async function runGptBlock(b: IHookEvent) {
 
     // 先进行内容检查，如果检查不通过直接返回
     try {
-      await validateContent(currentBlock.content, openAISettings);
-    } catch (error) {
-      // 内容检查不通过，直接返回
-      return;
+      await validateContent(currentBlock.content);
+    } catch (error: any) {
+      if (error.type) {
+        let message = error.message;
+        if (message.includes("----")) {
+          message = message.split("----")[0].trim();
+        }
+        showMessage(message, error.level === "extreme" ? "error" : "warning");
+        return; // 始终中断响应
+      }
+      throw error;
     }
 
-    // 只有内容检查通过才继续执行
+    // 只有内容检查通过或mild类型词才继续执行
     let result = "";
-    // { sibling: false } 表示插入的新块是当前块的子块，而不是同级块。
     const insertBlock = await logseq.Editor.insertBlock(
       currentBlock.uuid,
       result,
@@ -157,36 +172,15 @@ export async function runGptBlock(b: IHookEvent) {
     );
 
     if (openAISettings.injectPrefix && result.length == 0) {
-      // 确保在后续内容生成之前，前缀已经被加到 result 中，比如 injectPrefix 被设置为：“#Gpt4o”
       result = openAISettings.injectPrefix + result;
     }
 
-    // 定义一个异步回调函数 async (content: string) => {...}：，接收 content 参数，表示从 OpenAI API 获取的内容。
-    // 内容回调函数，每当从 OpenAI API 获取到一部分内容时，会调用这个函数。
-    // 这个函数负责将获取到的内容拼到 result 中，并更新插入的新块的内容。
-    // =>：箭头函数的语法，用于定义匿名函数；例如：async (content: string) => {...} 表示一个异步箭头函数，接收 content 参数
-    // 更新块的内容：将从 OpenAI API 获取的内容逐步拼接到 result 中，更新插入的新块的内容。
-    // 确保 result 的值：即使 content 为 null 或 undefined，也不会影响 result 的拼接。
-    // await openAIWithStream(currentBlock.content, openAISettings, async (content: string) => {...}, () => {});：
-    // 调用 openAIWithStream 函数，传入当前块的内容、设置、内容回调和停止回调。
-
-    // currentBlock.content：这是用户输入的内容，作为请求的一部分传递给 OpenAI API。
-    // async (content: string) => {...}：这里的 content 是从 OpenAI API 响应中获取的内容块，是逐步递增动态完善的 content，每读取到一个新的数据块，都会调用这个回调函数，将新的内容块拼接到 result 中。
-
-    //## openAIWithStream 函数：负责与 OpenAI API 交互，处理流式响应，并逐步拼接结果。
-    //## openAIWithStream 函数的主要作用是将当前内容 currentBlock.content 传入 OpenAI API，通过 async (content: string) => {...} 响应之后，递归调用返回结果，分步更新块内容。
-    //## async (content: string) => {...}：内容回调函数，用于处理从 OpenAI API 获取到的内容。
-    // 内容回调：将从 OpenAI API 获取的内容逐步拼接到 result 中，并更新插入的新块。
-    // () => {}：停止回调函数，当流读取完成后会调用这个函数。
     await openAIWithStream(
       currentBlock.content,
       openAISettings,
       async (content: string) => {
-        // 将 content 拼接到 result 中；如果 content 为 null 或 undefined，则使用空字符串 ""
-        // 这是在内容回调函数中使用的 result，用于拼接从 OpenAI API 响应中获取的内容块。
         result += content || "";
-        if (null != insertBlock) {
-          // 更新插的新块的内容：result：拼接的最终内容；await 关键字表示等待 logseq.Editor.updateBlock 完成后再继续执行后续代码。
+        if (insertBlock) {
           await logseq.Editor.updateBlock(insertBlock.uuid, result);
         }
       },
@@ -207,11 +201,11 @@ export async function runGptPage(b: IHookEvent) {
   await validateSettings(openAISettings);
 
   const pageContents = await getPageContentFromBlock(b.uuid);
-  
+
   try {
     // 添加内容检查
-    await validateContent(pageContents, openAISettings);
-    
+    await validateContent(pageContents);
+
     const currentBlock = await logseq.Editor.getBlock(b.uuid);
 
     if (pageContents.length === 0) {
@@ -269,60 +263,69 @@ export async function runGptsID(
   gptsID: string,
   commandName: string
 ) {
-  const openAISettings = getOpenaiSettings();
-  await validateSettings(openAISettings);
-
-  const currentBlock = await logseq.Editor.getBlock(b.uuid);
-  if (!currentBlock) {
-    console.error("No current block");
-    return;
-  }
-
-  if (currentBlock.content.trim().length === 0) {
-    showMessage("Empty Content", "warning");
-    console.warn("Blank page");
-    return;
-  }
-
   try {
-    // 添加内容检查
-    await validateContent(currentBlock.content, openAISettings);
-    
-    let result = "";
+    const openAISettings = getOpenaiSettings();
+    await validateSettings(openAISettings);
+
+    const currentBlock = await logseq.Editor.getBlock(b.uuid);
+    if (!currentBlock) {
+      console.error("No current block");
+      return;
+    }
+
+    if (currentBlock.content.trim().length === 0) {
+      showMessage("Empty Content", "warning");
+      console.warn("Blank page");
+      return;
+    }
+
+    try {
+      await validateContent(currentBlock.content);
+    } catch (error: any) {
+      if (error.type) {
+        showMessage(
+          error.message,
+          error.level === "extreme" ? "error" : "warning"
+        );
+        return;
+      }
+      throw error;
+    }
+
+    let responseText = "";
     const insertBlock = await logseq.Editor.insertBlock(
       currentBlock.uuid,
-      result,
+      responseText,
       {
         sibling: false,
       }
     );
 
-    const newPrefix = `OpenAI GPTs：${commandName}\n`; // 新增：构建新的前缀
-    if (openAISettings.injectPrefix && result.length === 0) {
-      result = openAISettings.injectPrefix + newPrefix; // 修改：将新缀加入到现有前缀之后
+    const newPrefix = `OpenAI GPTs：${commandName}\n`;
+    if (openAISettings.injectPrefix && responseText.length === 0) {
+      responseText = openAISettings.injectPrefix + newPrefix;
     } else {
-      result = newPrefix; // 如果没有现有前缀，直接使用新前缀
+      responseText = newPrefix;
     }
-    // gpts: gptsID 会覆盖 openAISettings 中同名的属性。
+
     await openAIWithStreamGptsID(
       currentBlock.content,
       { ...openAISettings, gpts: gptsID },
       async (content: string) => {
-        result += content || "";
+        responseText += content || "";
         if (insertBlock) {
-          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          await logseq.Editor.updateBlock(insertBlock.uuid, responseText);
         }
       },
       () => {}
     );
 
-    if (!result) {
+    if (!responseText) {
       showMessage("No OpenAI content", "warning");
       return;
     }
-  } catch (e: any) {
-    console.error("Error in runGptsID:", e);
-    handleOpenAIError(e);
+  } catch (error: any) {
+    handleOpenAIError(error);
   }
 }
 
@@ -332,7 +335,7 @@ function parseImageSizeFromPrompt(prompt: string): string | null {
   return match ? match[0] : null;
 }
 
-// 新增函数2 for gpts-toml
+// 增函数2 for gpts-toml
 export async function createRunGptsTomlCommand(command: Command) {
   return async (b: IHookEvent) => {
     try {
@@ -352,10 +355,17 @@ export async function createRunGptsTomlCommand(command: Command) {
 
       // 先进行内容检查，如果检查不通过直接返回
       try {
-        await validateContent(currentBlock.content, openAISettings);
-      } catch (error) {
-        // 内容检查不通过，直接返回
-        return;
+        await validateContent(currentBlock.content);
+      } catch (error: any) {
+        if (error.type) {
+          let message = error.message;
+          if (message.includes("----")) {
+            message = message.split("----")[0].trim();
+          }
+          showMessage(message, error.level === "extreme" ? "error" : "warning");
+          return; // 始终中断响应
+        }
+        throw error;
       }
 
       // 只有内容检查通过才继续执行
@@ -468,7 +478,7 @@ export async function createRunGptsTomlCommand(command: Command) {
 
               for (let i = 1; i <= n; i++) {
                 // 构建当前场景的完整提示词
-                const currentPrompt = `${prompt}，本次指令：绘制第${i}幅子场景`;
+                const currentPrompt = `${prompt}，本指令：绘制第${i}幅子场景`;
 
                 // 构建完整的提示词对象
                 const currentPromptJson = {
@@ -477,7 +487,7 @@ export async function createRunGptsTomlCommand(command: Command) {
                   n: 1,
                 };
 
-                // 记录当前正在处理的完整提示词
+                // 记录当前正在处理的完整示词
                 console.log(`\n开始处理第 ${i}/${n} 幅图片`);
                 console.log(
                   "当前完整提示词:",
@@ -504,7 +514,7 @@ export async function createRunGptsTomlCommand(command: Command) {
                     console.log(`第 ${i}/${n} 幅图片生成完成`);
 
                     // 更新结果，保留提示词
-                    result = `提示词：\n\`\`\`json\n${jsonString}\n\`\`\`\n\n${processedImages.join(
+                    result = `提示：\n\`\`\`json\n${jsonString}\n\`\`\`\n\n${processedImages.join(
                       "\n"
                     )}\n`;
 
@@ -554,9 +564,7 @@ export async function createRunGptsTomlCommand(command: Command) {
         onStop
       );
     } catch (error: any) {
-      // 统一使用 handleOpenAIError 处理所有错误
       handleOpenAIError(error);
-      // 阻止继续执行
       return;
     }
   };
@@ -585,8 +593,8 @@ export async function runDalleBlock(b: IHookEvent) {
 
   try {
     // 添加内容检查
-    await validateContent(currentBlock.content, openAISettings);
-    
+    await validateContent(currentBlock.content);
+
     const imageURL = await dallE(currentBlock.content, openAISettings);
     if (!imageURL) {
       showMessage("No Dalle results.", "warning");
@@ -634,7 +642,7 @@ export async function runReadImageURL(b: IHookEvent) {
 
     const openAISettings = getOpenaiSettings();
 
-    // 判断是远程图片链接还是本地图片路径
+    // 判断是远程图片链接还是本图片径
     const isRemoteUrl =
       imageUrl.startsWith("http://") || imageUrl.startsWith("https://");
 
@@ -645,7 +653,7 @@ export async function runReadImageURL(b: IHookEvent) {
         // 如果是远程图片链接，调用 readImageURL
         description = await readImageURL(imageUrl, openAISettings);
       } else {
-        // 如果是本地图片路径调用 readLocalImageURL
+        // 如果是本图片路径调用 readLocalImageURL
         description = await readLocalImageURL(imageUrl, openAISettings);
       }
 

@@ -288,17 +288,13 @@ export function checkUserInput(input: string): CheckResult | void {
   }
 
   // 取所有唯一的敏感词
-  const extremeWords = [
-    ...new Set(Array.from(matches.extreme.values()).flat()),
-  ];
+  const extremeWords = [...new Set(Array.from(matches.extreme.values()).flat())];
   const mildWords = [...new Set(Array.from(matches.mild.values()).flat())];
-  const contextWords = [
-    ...new Set(Array.from(matches.context.values()).flat()),
-  ];
+  const contextWords = [...new Set(Array.from(matches.context.values()).flat())];
 
   // 1. 处理包含 extreme 词的情况
   if (extremeWords.length > 0) {
-    // 如果同时存在 extreme 和 mild 词，或存在多个 extreme 词
+    // 如果同时存在 extreme 和 mild/context 词，或存在多个 extreme 词
     if (mildWords.length > 0 || extremeWords.length > 1) {
       const allWords = [...extremeWords, ...mildWords];
       return {
@@ -315,12 +311,10 @@ export function checkUserInput(input: string): CheckResult | void {
     };
   }
 
-  // 2. 处理 mild 和 context 词的组合
-  if (mildWords.length > 0) {
-    // 获取第一个mild词的类型
+  // 2. 处理多个不同mild词的组合
+  const uniqueMildCategories = new Set(matches.mild.keys());
+  if (uniqueMildCategories.size > 1) {
     const [category] = Array.from(matches.mild.keys());
-
-    // 无论是单个mild词还是多个mild词，都使用相同的类型
     return {
       level: "mild",
       type: category as ContentModerationErrorType,
@@ -328,13 +322,25 @@ export function checkUserInput(input: string): CheckResult | void {
     };
   }
 
-  // 3. 处理多个 context 词的情况
-  if (contextWords.length > 1) {
+  // 3. 处理mild词和context词的组合
+  if (mildWords.length > 0 && contextWords.length > 0) {
+    const [category] = Array.from(matches.mild.keys());
     return {
-      level: "context",
-      words: contextWords,
+      level: "mild",
+      type: category as ContentModerationErrorType,
+      words: mildWords,
     };
   }
 
+  // 4. 处理多个不同context词的组合
+  const uniqueContextWords = new Set(contextWords);
+  if (uniqueContextWords.size > 1) {
+    return {
+      level: "context",
+      words: Array.from(uniqueContextWords),
+    };
+  }
+
+  // 5. 单个mild词（包括重复）或单个context词（包括重复）直接返回undefined
   return;
 }

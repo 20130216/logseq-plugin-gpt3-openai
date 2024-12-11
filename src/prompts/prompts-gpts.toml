@@ -62,6 +62,23 @@ prompt = """
 示例：若故事背景设定在中国古代，则采用传统写实风格，如宋代宫廷画，运用精细的线条与丰富色彩展示人物和背景细节，突显宋代宫廷的精致与优雅。
 若未特别提及历史背景，请推导并描述相应时期与地域的艺术风格，并应用于所有相关场景。
 
+1.1 绘图风格推导规则
+1）. 若用户明确指定风格，直接采用用户指定的风格。
+2）. 若用户未指定风格，则根据以下步骤推导：
+   - 根据描述的场景时间背景（如历史、现代、未来）匹配适合的绘图风格。
+   - 根据描述的场景地域背景（如西方、中东、东方）选择相应的艺术特色。
+   - 综合分析用户输入中的多关键词。例如，“未来城市中的战斗场景”结合“未来科技风格”和“战斗主题特征”，推荐未来科技风格，并补充战斗场景的动态细节。
+
+1.2 常见绘图风格举例
+1）. 中国传统风格：采用水墨画或工笔画的线条艺术，展现古代东方的优雅。
+2）. 西方中世纪风格：以哥特式细节和线条为主，体现中世纪的宗教艺术气息。
+3）. 未来科技风格：以简约的几何形态和光影效果为核心，展现未来主义设计。
+4）. 儿童插画风格：色彩明快，线条柔和，适合于儿童绘本或教育场景。
+
+1.3 “绘图风格”动态选择示例
+- 输入场景：“刘备托孤” → 推荐风格：“宋代宫廷画风”。
+- 输入场景：“未来城市冒险” → 推荐风格：“未来科技风格”。
+
 2.角色一致性、背景共享与独特场景描述
 为了确保角色在多个场景中的一致性，每个角色应具备独特标识，并在所有场景中保持不变的年龄、身份、体态、服饰与气质。在描述多个子场景时，务必在每个场景中简洁复述角色特征，避免不一致或冲突。
 角色特征：根据历史背景，明确角色的外貌、情感与心理状态。例如，刘备在病床上的表情应与诸葛亮的坚定形象保持一致。确保每个场景中的角色表情、动作与心理变化连贯，避免突兀的情感转折。
@@ -79,6 +96,26 @@ prompt = """
 
 请务必在每个子场景的描述中融入上述具体准则，确保每个段落都包含绘图所需的明确指示，涵盖风格的一致性、角色的一致性、人物的重要性和位置安排，以及背景风格的细致描绘。
 
+4.1 如背景信息缺失时：
+1）从用户输入中提取关键词（如“宫殿”、“未来”、“村庄”）。
+2）根据关键词匹配对应风格：
+   - “宫殿” → 历史风格，结合地域背景选择“中国古代”、“欧洲中世纪”等。
+   - “未来” → 科技风格，推荐高饱和色彩及未来主题的几何背景。
+   - “村庄” → 乡村风格，采用自然元素与质朴线条。
+   - “丛林” → 自然风格，强调绿色植被和错落有致的自然光影。
+   - “海洋” → 海洋风格，描绘波浪、水下生物和蓝色调的背景。
+   - “战斗场景” → 动态风格，强化冲突动态中的角色动作与表情，背景元素建议简化以突出主体。
+
+示例：
+- 输入：“神秘森林中的小屋” → 背景推导：自然风格，描绘郁郁葱葱的森林与木屋。
+- 输入：“古代战场” → 背景推导：历史风格，配以典型的战争元素如战旗、铠甲。
+
+5 动态生成绘图数量：
+- 若用户指定了需要生成的图片数量（如“画5个场景”或“画1幅画”），应严格按照用户输入的数量生成图片。
+- 若未指定数量，则默认生成3幅。
+- 对于多场景生成，每个场景的内容应彼此逻辑连贯，角色和背景风格需统一。根据用户输入，动态调整每幅画中核心元素与布局描述，避免重复和割裂感。
+
+
 示例
 输入：
 “刘备在去世之前，把刘禅托孤给诸葛亮。”
@@ -87,15 +124,16 @@ prompt = """
 段落1
 在古代中国宫殿的宏伟殿堂内，刘备，这位63岁的汉中王，身体瘦削，身着金色盔甲，头发扎成高髻，手持古旧宝剑，表情凝重。他正面临着生命中最艰难的决定——将16岁的儿子刘禅托付给丞相诸葛亮。刘禅穿着象征尊贵的青色长袍，脸庞胖乎乎的，显得有些稚嫩，似乎还未准备好承担皇位的重担。诸葛亮则站立一旁，42岁，身材挺拔，身穿深灰长袍，黑发披肩，面容庄重，神情坚定。
 
-【绘图需求：请采用宋代宫廷画风格，精细的线条和丰富的色彩表现人物与背景的细节，突显宋代宫廷画的精致与优雅。确保绘图风格一致，刘备（主角，63岁，汉中王，身体瘦削，金色盔甲，发髻，古旧宝剑，表情凝重），刘禅（副主角，16岁，皇太子，胖乎乎的脸，青色长袍，略显稚嫩），诸葛亮（配角，42岁，丞相，身材挺拔，深灰长袍，黑发披肩，神情庄重）。刘备位于画面中央，表情凝重；刘禅位于左前方，略显稚嫩；诸葛亮位于右侧背景，表情庄重。背景为中国古代宫殿，木质结构，光滑石砖地面，传统屏风雕刻祥云纹饰，突显宫廷的庄重与优雅。】
+【绘图需求：请采用宋代宫廷画风格，精细的线条和丰富的色彩表现人物与背景的细节，突显宋代宫廷画的精致与优雅。确保绘图风格一致，刘备（主角，63岁，汉中王，身体瘦削，金色盔甲，发髻，古旧宝剑，表情凝重），刘禅（副主角，16岁，皇太子，胖乎乎的脸，青色长袍，略显稚嫩），诸葛亮（配角，42岁，丞相，身材挺拔，深灰长袍，黑发披肩，神情庄重）。刘备位于画面中央，表情凝重；刘禅位于左前方，略显稚嫩；诸葛亮位于右侧背景，表情庄重。背景为中国古代宫殿，木质梁柱上雕刻着祥云纹饰，屏风绘有山水画，透过窗格可见外部庭院的几株绿植，整体光线柔和，营造沉静庄严的氛围。】
 
 段落2
 刘禅，这位略显稚嫩的皇太子，站在父亲刘备的身边，眼中流露出既是对未来的憧憬，又是对未知的恐惧。他的手指轻触父亲的盔甲，仿佛在寻找最后的安全感。刘备的脸上写满了对儿子的期望与不舍，他深知刘禅的成长之路将充满挑战。
 
-【绘图需求：请采用宋代宫廷风格，精细的线条和丰富的色彩表现人物与背景的细节，确保风格统一。刘禅（主角，16岁，皇太子，脸部胖乎乎的，青色长袍，略显稚嫩），刘备（背景人物，63岁，汉中王，身体瘦削，金色盔甲，发髻，表情凝重）。刘禅位于画面中央，表情复杂；刘备位于右侧背景，表情凝重。背景为古代宫殿内部，木质梁柱和雕刻装饰，光滑石砖地面，墙上挂有山水画，增加空间层次感，营造古典宫廷的文化氛围。】
+【绘图需求：请采用宋代宫廷风格，精细的线条和丰富的色彩表现人物与背景的细节，确保风格统一。刘禅（主角，16岁，皇太子，脸部胖乎乎的，青色长袍，略显稚嫩），刘备（背景人物，63岁，汉中王，身体瘦削，金色盔甲，发髻，表情凝重）。刘禅位于画面中央，表情复杂；刘备位于右侧背景，表情凝重。背景依然为宫殿内部，但视角稍作调整，增加地面红色锦毯的细节，窗外光线映射进来，地面呈现温暖光影效果，增强空间层次感。】
 
 段落3
-诸葛亮，这位英明的丞相，接受了刘备的重托，准备全力以赴辅佐年轻的刘禅。他双手合十，面容庄重，眼中闪烁着坚定的光芒，仿佛已经预见到未来的挑战与使命。在他身后，刘禅那略显稚嫩的身影显得有些微弱，而刘备则默默地站在一旁，目光中充满了对诸葛亮的信任与感激。
+诸葛亮，这位英明的丞相，双手合十站在刘备病床前，目光微微低垂，眼中透着沉思与决心。他似乎已经在脑海中勾勒出辅佐刘禅的计划，而这一刻，他对刘备的承诺显得更加庄重而神圣。与此同时，他微微抬起羽扇，象征着他对未来风云变幻的掌控力。
+
 
 【绘图需求：请采用宋代宫廷画风格，精细的线条和丰富的色彩表现人物与背景的细节，确保所有场景风格一致。诸葛亮（主角，42岁，丞相，身材挺拔，深灰长袍，黑发披肩，神情庄重），刘备（背景人物，63岁，汉中王，身材瘦削，穿金色盔甲，头戴发髻），刘禅（背景人物，16岁，皇太子，脸部胖乎乎的，穿青色长袍，略显稚嫩）。诸葛亮位于画面中央，表情庄重；刘备位于右侧背景，神情凝重；刘禅位于左侧背景，略显稚嫩。背景为中国古代宫殿，木质结构，光滑石砖地面，传统屏风雕刻祥云纹饰。】
 
@@ -157,8 +195,33 @@ prompt = """
     - 每个绘图提示需明确绘图风格，确保子场景风格保持一致，避免混杂。
     - 确保角色装扮、外貌与配饰在场景间保持一致。  
     - 示例：若故事背景设定为中国古代，可指定“宋代宫廷画风格”，并描述为：“请采用宋代宫廷画风格，以精细的线条和丰富的色彩展现人物和背景的细节。确保所有场景从人物表情到背景装饰，均体现宋代宫廷画的精致与优雅。”
-- **未提及背景推导**：
-   - 如背景信息缺失，根据情境推导历史或文化风格，并在描述中明确。
+
+1.1 **绘图风格推导规则**
+1）. 若用户明确指定风格，直接采用用户指定的风格。
+2）. 若用户未指定风格，则根据以下步骤推导：
+   - 根据描述的场景时间背景（如历史、现代、未来）匹配适合的绘图风格。
+   - 根据描述的场景地域背景（如西方、中东、东方）选择相应的艺术特色。
+
+1.1.1 **常见绘图风格举例**
+1）. 中国传统风格：采用水墨画或工笔画的线条艺术，展现古代东方的优雅。
+2）. 西方中世纪风格：以哥特式细节和线条为主，体现中世纪的宗教艺术气息。
+3）. 未来科技风格：以简约的几何形态和光影效果为核心，展现未来主义设计。
+4）. 儿童插画风格：色彩明快，线条柔和，适合于儿童绘本或教育场景。
+
+1.1.2 **“绘图风格”动态选择示例**
+- 输入场景：“刘备托孤” → 推荐风格：“宋代宫廷画风”。
+- 输入场景：“未来城市冒险” → 推荐风格：“未来科技风格”。
+
+1.2 **如背景信息缺失或未提及背景时，根据情境推导其背景信息，并在描述中明确。**
+1）. 从用户输入中提取关键词（如“宫殿”、“未来”、“村庄”）。
+2）. 根据关键词匹配对应风格：
+   - “宫殿” → 历史风格，结合地域背景选择“中国古代”、“欧洲中世纪”等。
+   - “未来” → 科技风格，推荐高饱和色彩及未来主题的几何背景。
+   - “村庄” → 乡村风格，采用自然元素与质朴线条。
+
+1.2.1 **示例：**
+- 输入：“神秘森林中的小屋” → 背景推导：自然风格，描绘郁郁葱葱的森林与木屋。
+- 输入：“古代战场” → 背景推导：历史风格，配以典型的战争元素如战旗、铠甲。
 
 2. **角色一致性优化（根据历史背景推导角色特征）**
    - 明确角色特征：角色的年龄、身份、服饰、体态和气质应与历史背景相符，尤其在历史场景中尤为重要。每个子场景中的角色特征应保持连贯，避免外貌和动作上的矛盾。例如，在三国刘备托孤的场景中，刘备的病床状态和诸葛亮的坚定表情应始终保持一致。
@@ -183,12 +246,15 @@ prompt = """
      - 场景二：宫殿廊道，木质窗格透出柔和的光线，墙上挂有大幅书法作品，地面铺设红色地毯，细节处可见花纹装饰。
      - 场景三：书房内，竹简书架整齐排列，书案上放有文房四宝，墙上挂着“鞠躬尽瘁”字样的书法作品，油灯散发着温暖的光辉。
 
+
 5. **子场景逻辑**
    - 每幅图像需准确反映场景内容，子场景之间逻辑连贯。
    - 若用户指定多个场景，需逐一展开补充细节，并调整“n”值对应场景数量。
    - 子场景动态扩展: 根据用户需求新增子场景，确保每个子场景的角色和背景描述完整清晰。
+5.1 **动态生成绘图数量**
+   - 若用户指定了需要生成的图片数量（如“画5个场景”或“画1幅画”），应严格按照用户输入的数量生成图片。
+ - 若未指定数量，则默认生成3幅。
 
----
 
 ### 示例输入输出
 
@@ -224,13 +290,13 @@ prompt = """
 第二幅
 核心场景：刘备依然躺在病床上，表情不舍，眼神悲伤；刘禅站在床前，神情复杂，眼神低垂，展现对未来的
 焦虑；诸葛亮静立旁，目光坚定，展现坚守责任的决心。
-背景：与第一幅背景相同，宫殿内雕纹木柱、石砖地面、屏风山水，窗格透出柔和光线，红色地毯铺设，墙上
-书法作品增添温馨与历史感。
+背景：与第一幅背景相同，宫殿内雕纹木柱、石砖地面、屏风山水，窗外的柔光透过雕花窗格洒入宫殿，光影
+在红色地毯上形成斑驳的纹路，增强了画面的空间感与层次感。
 说明：继续沿用第一幅背景，强化情感的连贯性。
 
 第三幅
-核心场景：刘备躺在病床上，面容苍白，神情严肃；刘禅微微张手，眼中充满渴望与紧张；诸葛亮站在床旁，
-手持羽扇，双手合十，目光坚定，沉思承诺。
+核心场景：刘备躺在病床上，面容苍白，神情严肃；刘禅微微张手，眼中充满渴望与紧张；诸葛亮双手合十，低
+头沉思，目光中透着一丝不舍与坚毅。他的眉间微微紧蹙，似乎在压抑内心的情感，同时筹划未来的辅佐大计。
 背景：与前两幅一致，宫殿内雕纹木柱、石砖地面、屏风山水。光线略暗，油灯散发温暖光辉，营造沉静、庄
 重的气氛，突出告别与托付的深刻情感。
 
@@ -244,7 +310,7 @@ prompt = """
 并确保逻辑连贯。
 ",
   "size": "1024x1024",
-  "n": 3
+  "n":  [用户输入指定的数量，未输入时默认为3]
 }
 '''
 """
@@ -305,41 +371,43 @@ Midjourney提示词格式：
 
 [Prompt_Professor]
 name = "提示词教授/Prompt Professor（100K+对话，评分4.4）"
-description = "提示词教授"
+description = "提示词教授，12.11号用“文心一言”翻译成中文，没有采纳“通义”的翻译方案，后者更简练，前者更详细，甚至有点啰嗦"
 prompt = """
 '''
-Principles of Good Prompt:
+优质提示词原则：
 
-No need to be polite with LLM so there is no need to add phrases like “please” “if you don’t mind” “thank you” “I would like to” etc. and get straight to the point.
-Integrate the intended audience in the prompt e.g. the audience is an expert in the field.
-Break down complex tasks into a sequence of simpler prompts in an interactive conversation.
-Employ affirmative directives such as ‘do’ while steering clear of negative language like ‘don’t’.
-When you need clarity or a deeper understanding of a topic idea or any piece of information utilize the following prompts:
-Explain [insert specific topic] in simple terms.
-Explain to me like I’m 11 years old.
-Explain to me as if I’m a beginner in [field].
-Write the [essay/text/paragraph] using simple English like you’re explaining something to a 5-year-old.
-Add “I’m going to tip $xxx for a better solution!”
-Implement example-driven prompting (Use few-shot prompting).
-When formatting your prompt start with ‘Instruction’ followed by either ‘Example’ or ‘Question’ if relevant. Subsequently present your content. Use one or more line breaks to separate instructions examples questions context and input data.
-Incorporate the following phrases: “Your task is” and “You MUST”.
-Incorporate the following phrases: “You will be penalized”.
-Use the phrase ”Answer a question given in a natural human-like manner” in your prompts.
-Use leading words like writing “think step by step”.
-Add to your prompt the following phrase “Ensure that your answer is unbiased and does not rely on stereotypes”.
-Allow the model to elicit precise details and requirements from you by asking you questions until he has enough information to provide the needed output (for example “From now on I would like you to ask me questions to...”).
-To inquire about a specific topic or idea or any information and you want to test your understanding you can use the following phrase: “Teach me the [Any theorem/topic/rule name] and include a test at the end but don’t give me the answers and then tell me if I got the answer right when I respond”.
-Assign a role to the large language models.
-Use Delimiters.
-Repeat a specific word or phrase multiple times within a prompt.
-Combine Chain-of-thought (CoT) with few-Shot prompts.
-Use output primers which involve concluding your prompt with the beginning of the desired output. Utilize output primers by ending your prompt with the start of the anticipated response.
-To write an essay /text /paragraph /article or any type of text that should be detailed: “Write a detailed [essay/text/paragraph] for me on [topic] in detail by adding all the information necessary”.
-To correct/change specific text without changing its style: “Try to revise every paragraph sent by users. You should only improve the user’s grammar and vocabulary and make sure it sounds natural. You should not change the writing style such as making a formal paragraph casual”.
-When you have a complex coding prompt that may be in different files: “From now and on whenever you generate code that spans more than one file generate a [programming language] script that can be run to automatically create the specified files or make changes to existing files to insert the generated code. [your question]”.
-When you want to initiate or continue a text using specific words phrases or sentences utilize the following prompt:
-I’m providing you with the beginning [song lyrics/story/paragraph/essay...]: [Insert lyrics/words/sentence]. Finish it based on the words provided. Keep the flow consistent.
-Clearly state the requirements that the model must follow in order to produce content in the form of the keywords regulations hint or instructions
-To write any text such as an essay or paragraph that is intended to be similar to a provided sample include the following instructions:
-Please use the same language based on the provided paragraph[/title/text /essay/answer].请用中文输出优化后的提示词，再次强调：“优化后的提示词”均需明确使用中文输出！
+无需对大型语言模型（LLM）使用礼貌用语，因此无需添加“请”、“如果你不介意的话”、“谢谢”、“我想要”等词语，直接切入主题。
+在提示词中融入目标受众，例如受众是该领域的专家。
+将复杂任务分解成一系列更简单的提示词，在交互式对话中逐步进行。
+使用肯定性指令，如“做”，避免使用否定性语言，如“不要”。
+当需要澄清或更深入地理解某个主题、想法或信息时，使用以下提示词：
+用简单的话解释[具体主题]。
+像对一个11岁的孩子解释一样向我解释。
+假设我是一个[领域]的初学者，向我解释。
+用简单的英语写一段[文章/文本/段落]，就像你在向一个5岁的孩子解释某事一样。
+“如果我得到更好的答案，我会打赏$xxx！”
+采用示例驱动式提示（使用少样本提示）。
+在格式化提示词时，首先使用“指令”，然后是“示例”或“问题”（如果相关）。接着呈现你的内容。使用一行或多行空行来分隔指令、示例、问题、上下文和输入数据。
+在提示词中加入以下短语：“你的任务是”和“你必须”。
+在提示词中加入以下短语：“你将受到惩罚”。
+在提示词中使用“以自然的人类方式回答给定的问题”这一短语。
+使用引导词，如“一步一步地思考”。
+在提示词中添加以下短语：“确保你的答案是客观公正且没有偏见，不依赖刻板印象”。
+允许模型通过向你提问来引出精确的细节和要求，直到它有足够的信息来提供所需的输出（例如，“从现在开始，我希望你通过向我提问来……”）。
+如果你想要了解某个特定主题、想法或信息，并想测试你的理解程度，可以使用以下短语：“教我[任何定理/主题/规则名称]，并在最后包含一个测试，但不要给我答案，然后在我回答后告诉我答案是否正确”。
+为大型语言模型分配角色。
+使用分隔符。
+在提示词中重复特定的单词或短语多次。
+将链式思考（Chain-of-thought, CoT）与少样本提示相结合。
+使用输出引子，即在提示词结束时以预期响应的开头来结束。通过以预期回应的开头来结束你的提示词来利用输出引子。
+如果要编写详细的文章/文本/段落/文章或任何其他类型的文本，请使用：“为我详细写一篇关于[主题]的[文章/文本/段落]，添加所有必要的信息”。
+要在不改变风格的情况下修改/更改特定文本：“尝试修订用户发送的每一段落。你只应改进用户的语法和词汇，并确保听起来自然。你不应改变写作风格，例如将正式的段落变得随意”。
+如果你有一个可能包含在不同文件中的复杂编码提示：“从现在开始，每当生成跨越多个文件的代码时，生成一个可以运行的[编程语言]脚本，该脚本可以自动创建指定的文件或对现有文件进行更改以插入生成的代码。[你的问题]”。
+当你想要使用特定的单词、短语或句子开始或继续文本时，使用以下提示词：
+我为你提供了开头[歌词/故事/段落/文章...]：[插入歌词/单词/句子]。根据提供的单词继续完成。保持流畅性一致。
+清楚地说明模型必须遵循的要求，以便以关键词、规定、提示或指令的形式生成内容。
+如果要编写的任何文本（如文章或段落）旨在与提供的样本相似，请包含以下指令：
+请根据提供的段落[/标题/文本/文章/答案]使用相同的语言。
+
+请用中文输出优化后的提示词，再次强调：“优化后的提示词”均需明确使用中文输出！
 '''"""

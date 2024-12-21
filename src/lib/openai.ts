@@ -162,7 +162,10 @@ export async function openAI(
   openAiOptions: OpenAIOptions
 ): Promise<string | null> {
   try {
-    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+    const options = {
+      ...OpenAIDefaults(openAiOptions.apiKey),
+      ...openAiOptions,
+    };
     const engine = options.completionEngine!;
 
     const openai = new OpenAI({
@@ -247,18 +250,20 @@ function getDataFromStreamValue(value: string): any[] {
     if (line.startsWith("data: ")) {
       const data = line.slice(6).trim();
       if (data === "[DONE]") {
-        return []; // 返回空数组以跳过 [DONE] 标记
+        return [];
       }
       try {
-        // 检查 JSON 完整
         if (data.startsWith("{") && data.endsWith("}")) {
+          if (process.env.NODE_ENV === "development") {
+            console.debug("解析的 JSON 数据:", data);
+          }
           return JSON.parse(data);
-        } else {
-          console.debug("不完整的 JSON 数据:", data); // 调试输出不完整的 JSON 数据
-          return [];
         }
+        return [];
       } catch (error) {
-        console.debug("从流中解析 JSON 失败:", line, error); // 调试输出解失败的信
+        if (process.env.NODE_ENV === "development") {
+          console.debug("JSON 解析失败:", error);
+        }
         return [];
       }
     }
@@ -281,7 +286,10 @@ export async function openAIWithStream(
   onStop: () => void
 ): Promise<string | null> {
   try {
-    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+    const options = {
+      ...OpenAIDefaults(openAiOptions.apiKey),
+      ...openAiOptions,
+    };
     const engine = options.completionEngine!;
 
     console.log(
@@ -320,7 +328,9 @@ export async function openAIWithStream(
 
     if (!response.ok) {
       throw new Error(
-        `请求失败，状态码: ${response.status}，错误信息: ${await response.text()}`
+        `请求失败，状态码: ${
+          response.status
+        }，错误信息: ${await response.text()}`
       );
     }
 
@@ -334,7 +344,9 @@ export async function openAIWithStream(
       throw new Error("Response body is empty");
     }
 
-    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    const reader = response.body
+      .pipeThrough(new TextDecoderStream())
+      .getReader();
     let result = "";
 
     const readStream = async (): Promise<any> => {
@@ -383,7 +395,6 @@ export async function openAIWithStream(
     return readStream().catch((error) => {
       throw error; // 向上抛出错误
     });
-
   } catch (error: any) {
     // 使用 handleOpenAIError 统一处理错误
     handleOpenAIError(error);
@@ -411,7 +422,10 @@ export async function openAIWithStreamGptsID(
   onStop: () => void
 ): Promise<string | null> {
   try {
-    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+    const options = {
+      ...OpenAIDefaults(openAiOptions.apiKey),
+      ...openAiOptions,
+    };
 
     const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [
       { role: "user", content: input },
@@ -453,13 +467,17 @@ export async function openAIWithStreamGptsID(
 
       if (!fetchResponse.ok) {
         throw new Error(
-          `请求失败，状态码: ${fetchResponse.status}，错误信息: ${await fetchResponse.text()}`
+          `请求失败，状态码: ${
+            fetchResponse.status
+          }，错误信息: ${await fetchResponse.text()}`
         );
       }
 
       if (fetchResponse.headers.get("Content-Type") !== "text/event-stream") {
         throw new Error(
-          `Unexpected Content-Type: ${fetchResponse.headers.get("Content-Type")}`
+          `Unexpected Content-Type: ${fetchResponse.headers.get(
+            "Content-Type"
+          )}`
         );
       }
 
@@ -570,61 +588,55 @@ const processedParagraphs = new Set<string>();
 
 const imageKeywords = [
   // 完整标准格式
-  '【绘图需求】',
-  
-  // 缺失单个字符的情况
-  '绘图需求】',  // 缺【
-  '【图需求】',  // 缺绘
-  '【绘需求】',  // 缺图
-  '【绘图求】',  // 缺需
-  '【绘图需】',  // 缺求
-  '【绘图需求',  // 缺】
-  
-  // 缺失两个字符的情况
-  '图需求】',   // 缺【绘
-  '绘需求】',   // 缺【图
-  '绘图求】',   // 缺【需
-  '绘图需】',   // 缺【求
-  '绘图需求',   // 缺【】
-  '【需求】',   // 缺绘图
-  '【图求】',   // 缺绘需
-  '【图需】',   // 缺绘求
-  '【绘求】',   // 缺图需
-  '【绘需】',   // 缺图求
-  '【绘图】',   // 缺需求
-  
-  // 缺失三个字符的情况
-  '需求】',    // 缺【绘图
-  '图求】',    // 缺【绘需
-  '图需】',    // 缺【绘求
-  '绘求】',    // 缺【图需
-  '绘需】',    // 缺【图求
-  '绘图】',    // 缺【需求
-  '【求】',    // 缺绘图需
-  '【需】',    // 缺绘图求
-  '【图】',    // 缺绘需求
-  '【绘】',    // 缺图需求
-  
-  // 缺失四个字符的情况
-  '求】',     // 缺【绘图需
-  '需】',     // 缺【绘图求
-  '图】',     // 缺【绘需求
-  '绘】',     // 缺【图需求
-  '【】',     // 缺绘图需求
-  
-  // 缺失五个字符的情况
-  '】',      // 缺【绘图需求
-  '【'       // 缺绘图需求】
-] as const;
+  "【绘图需求】",
 
-function removeDrawingMarkers(text: string): string {
-  // return text.replace(/【需绘图】|【图片生成】|【绘图需求】| \n/g, "").trim();
-  return text.replace(/\n/g, "").trim();
-}
+  // 缺失单个字符的情况
+  "绘图需求】", // 缺【
+  "【图需求】", // 缺绘
+  "【绘需求】", // 缺图
+  "【绘图求】", // 缺需
+  "【绘图需】", // 缺求
+  "【绘图需求", // 缺】
+
+  // 缺失两个字符的情况
+  "图需求】", // 缺【绘
+  "绘需求】", // 缺【图
+  "绘图求】", // 缺【需
+  "绘图需】", // 缺【求
+  "绘图需求", // 缺【】
+  "【需求】", // 缺绘图
+  "【图求】", // 缺绘需
+  "【图需】", // 缺绘求
+  "【绘求】", // 缺图需
+  "【绘需】", // 缺图求
+  "【绘图】", // 缺需求
+
+  // 缺失三个字符的情况
+  "需求】", // 缺【绘图
+  "图求】", // 缺【绘需
+  "图需】", // 缺【绘求
+  "绘求】", // 缺【图需
+  "绘需】", // 缺【图求
+  "绘图】", // 缺【需求
+  "【求】", // 缺绘图需
+  "【需】", // 缺绘图求
+  "【图】", // 缺绘需求
+  "【绘】", // 缺图需求
+
+  // 缺失四个字符的情况
+  "求】", // 缺【绘图需
+  "需】", // 缺【绘图求
+  "图】", // 缺【绘需求
+  "绘】", // 缺【图需求
+  "【】", // 缺绘图需求
+
+  // 缺失五个字符的情况
+  "】", // 缺【绘图需求
+  "【", // 缺绘图需求】
+] as const;
 
 function checkAndExtractImagePrompt(
   paragraph: string,
-  backgroundPrompt: string,
   isLastParagraph: boolean = false
 ): {
   hasRequest: boolean;
@@ -633,93 +645,62 @@ function checkAndExtractImagePrompt(
   let hasRequest = false;
   let prompt = "";
 
-  // 从 backgroundPrompt 中提取实际的用户输入内容
-  // 通常用户输入在 logseq 块中会包含 id:: 这样的标识
-  const userInputMatch = backgroundPrompt.match(/^(.*?)(?:\s*id::|$)/s);
-  const cleanBackgroundPrompt = userInputMatch
-    ? userInputMatch[1].trim()
-    : backgroundPrompt.trim();
+  // 移除段落标记
+  const cleanedParagraph = paragraph.replace(/^段落\d*\s*/, "").trim();
 
-  for (let index = 0; index < imageKeywords.length; index++) {
-    const keyword = imageKeywords[index];
-    const regex = new RegExp(keyword, "g");
-    const matchResult = regex.test(paragraph);
-    if (matchResult) {
+  // 检查是否包含绘图需求标记
+  for (let keyword of imageKeywords) {
+    if (cleanedParagraph.includes(keyword)) {
       hasRequest = true;
-      const cleanedParagraph = removeDrawingMarkers(paragraph);
-      prompt = `**背景：${cleanBackgroundPrompt} ** ${cleanedParagraph}`;
-      if (prompt) {
-        break;
+
+      // 找到绘图需求的位置
+      const requestIndex = cleanedParagraph.indexOf(keyword);
+
+      // 分离故事背景和绘图需求
+      const storyBackground = cleanedParagraph
+        .substring(0, requestIndex)
+        .trim();
+      const drawingRequest = cleanedParagraph.substring(requestIndex).trim();
+
+      // 如果当前段落包含故事背景，直接使用
+      if (storyBackground) {
+        prompt = drawingRequest; // 只使用绘图需求部分作为提示词
+      } else {
+        // 如果当前段落没有故事背景，向前查找最近的非绘图需求段落
+        const paragraphs = paragraph.split(/\n\n|\n### /);
+        for (let i = paragraphs.length - 1; i >= 0; i--) {
+          const prevParagraph = paragraphs[i].trim();
+          if (
+            prevParagraph &&
+            !prevParagraph.includes("【绘图") &&
+            !prevParagraph.startsWith("段落")
+          ) {
+            prompt = drawingRequest; // 仍然只使用绘图需求部分
+            break;
+          }
+        }
       }
+
+      // 如果没有找到有效的提示词，使用整个绘图需求
+      if (!prompt) {
+        prompt = drawingRequest;
+      }
+
+      break;
     }
   }
 
-  if (hasRequest) {
-    if (isLastParagraph || !processedParagraphs.has(prompt)) {
-      processedParagraphs.add(prompt);
-      return { hasRequest: true, prompt };
-    }
+  if (hasRequest && (!processedParagraphs.has(prompt) || isLastParagraph)) {
+    processedParagraphs.add(prompt);
+    console.log("处理段落，生成提示词:", prompt); // 添加调试日志
+    return { hasRequest: true, prompt };
   }
 
   return { hasRequest: false, prompt: "" };
 }
 
-//不调用removeDrawingMarkers，不进行任何关键字“擦除”的函数
-/*   function checkAndExtractImagePrompt(
-    paragraph: string,
-    backgroundPrompt: string,
-    isLastParagraph: boolean = false
-  ): {
-    hasRequest: boolean;
-    prompt: string;
-  } {
-    let hasRequest = false;
-    let prompt = "";
-  
-    // 从 backgroundPrompt 中提取实际的用户输入内容
-    // 通常用户输入在 logseq 块中会包含 id:: 这样的标识
-    const userInputMatch = backgroundPrompt.match(/^(.*?)(?:\s*id::|$)/s);
-    const cleanBackgroundPrompt = userInputMatch
-      ? userInputMatch[1].trim()
-      : backgroundPrompt.trim();
-  
-    for (let index = 0; index < imageKeywords.length; index++) {
-      const keyword = imageKeywords[index];
-      const regex = new RegExp(keyword, "g");
-      const matchResult = regex.test(paragraph);
-      if (matchResult) {
-        hasRequest = true;
-        // 直接使用原始的 paragraph 来构建提示
-        prompt = `**背景：** ${cleanBackgroundPrompt} **子板块 ${
-          index + 1
-        }：** ${paragraph}`;
-        if (prompt) {
-          break;
-        }
-      }
-    }
-  
-    if (hasRequest) {
-      if (isLastParagraph || !processedParagraphs.has(prompt)) {
-        processedParagraphs.add(prompt);
-        return { hasRequest: true, prompt };
-      }
-    }
-  
-    return { hasRequest: false, prompt: "" };
-  } */
-
 // 主函数
 // 优化后的 openAIWithStreamGptsToml 函数
-function cleanUserInput(input: string): string {
-  // 移除 markdown 代码块和系统提示
-  const markdownMatch = input.match(/'''markdown\n([\s\S]*?)'''([\s\S]*)/);
-  if (markdownMatch && markdownMatch[2]) {
-    // 返回 markdown 代码块之后的实际用户输入
-    return markdownMatch[2].trim();
-  }
-  return input.trim();
-}
 export async function openAIWithStreamGptsToml(
   input: string,
   openAiOptions: OpenAIOptions,
@@ -728,9 +709,10 @@ export async function openAIWithStreamGptsToml(
   onStop: () => void
 ): Promise<string | { error: string } | null> {
   try {
-    const cleanedInput = cleanUserInput(input);
-
-    const options = { ...OpenAIDefaults(openAiOptions.apiKey), ...openAiOptions };
+    const options = {
+      ...OpenAIDefaults(openAiOptions.apiKey),
+      ...openAiOptions,
+    };
     const engine = options.completionEngine!;
 
     const inputMessages: OpenAI.Chat.CreateChatCompletionRequestMessage[] = [
@@ -808,7 +790,6 @@ export async function openAIWithStreamGptsToml(
                 );
                 const { hasRequest, prompt } = checkAndExtractImagePrompt(
                   currentParagraph.trim(),
-                  cleanedInput,
                   true
                 );
                 if (hasRequest) {
@@ -832,20 +813,20 @@ export async function openAIWithStreamGptsToml(
                     const content = item.choices[0].delta.content;
                     currentParagraph += content;
 
-                    if (content.includes("\n\n") || content.includes("\n### ")) {
+                    if (
+                      content.includes("\n\n") ||
+                      content.includes("\n### ")
+                    ) {
                       const paragraphs = currentParagraph.split(/\n\n|\n### /);
                       for (let i = 0; i < paragraphs.length - 1; i++) {
                         const paragraph = paragraphs[i].trim();
                         if (paragraph) {
                           console.log("完整段落:", paragraph);
                           const { hasRequest, prompt } =
-                            checkAndExtractImagePrompt(
-                              paragraph,
-                              cleanedInput,
-                              false
-                            );
+                            checkAndExtractImagePrompt(paragraph, false);
                           if (hasRequest) {
-                            result += paragraph + "\n为该段落绘图中，请稍后...\n";
+                            result +=
+                              paragraph + "\n为该段落绘图中，请稍后...\n";
                             onContent(
                               paragraph + "\n为该段落绘图中，请稍后...\n"
                             );

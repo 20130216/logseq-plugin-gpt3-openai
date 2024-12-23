@@ -132,14 +132,58 @@ export async function dallE(
     dangerouslyAllowBrowser: true,
   });
 
-  // TODO : fix this typing loop
-  // @ts-ignore
-  const imageSizeRequest: OpenAI.ImageGenerateParams["size"] =
-    options.dalleImageSize
-      ? options.dalleImageSize!.includes("x")
-        ? options.dalleImageSize
-        : `${options.dalleImageSize}x${options.dalleImageSize}`
-      : "256x256";
+  // 定义有效的尺寸类型
+  type ValidSize =
+    | "256x256"
+    | "512x512"
+    | "1024x1024"
+    | "1024x1792"
+    | "1792x1024";
+
+  // 改进尺寸处理逻辑
+  const imageSizeRequest = (() => {
+    if (!options.dalleImageSize) {
+      return "1024x1024" as ValidSize;
+    }
+
+    // 处理包含 "*" 的情况（如 "1792*1024"）
+    const size = options.dalleImageSize.replace("*", "x");
+
+    // 如果已经是正确格式（包含 "x"），检查是否为有效尺寸
+    if (size.includes("x")) {
+      const validSizes: ValidSize[] = [
+        "256x256",
+        "512x512",
+        "1024x1024",
+        "1024x1792",
+        "1792x1024",
+      ];
+      return (
+        validSizes.includes(size as ValidSize) ? size : "1024x1024"
+      ) as ValidSize;
+    }
+
+    // 处理单个数字的情况
+    const num = parseInt(size);
+    if (!isNaN(num)) {
+      // 定义尺寸阈值和对应的返回值
+      const sizeThresholds = [
+        { threshold: 256, size: "256x256" },
+        { threshold: 512, size: "512x512" },
+        { threshold: 1024, size: "1024x1024" },
+        { threshold: 1408, size: "1024x1024" }, // 1024~1408 返回 1024x1024
+        { threshold: 1792, size: "1792x1024" }, // 1408~1792 返回 1792x1024
+        { threshold: Infinity, size: "1024x1024" }, // 超过1792返回1024x1024
+      ] as const;
+
+      // 找到第一个大于输入值的阈值
+      const result = sizeThresholds.find(({ threshold }) => num <= threshold);
+      return result?.size as ValidSize;
+    }
+
+    // 如果无法解析为数字，返回默认值
+    return "1024x1024" as ValidSize;
+  })();
 
   const imageParameters: OpenAI.ImageGenerateParams = {
     prompt,
@@ -247,30 +291,30 @@ function getDataFromStreamValue(value: string): any[] {
     // 1. 更严格的行分割和过滤
     const lines = value
       .split(/\r?\n/)
-      .filter(line => line.trim() !== '')
-      .map(line => line.trim());
+      .filter((line) => line.trim() !== "")
+      .map((line) => line.trim());
 
-    return lines.flatMap(line => {
+    return lines.flatMap((line) => {
       // 2. 更严格的数据行检查
-      if (!line.startsWith('data: ')) {
+      if (!line.startsWith("data: ")) {
         return [];
       }
 
       // 3. 提取数据部分
       const data = line.slice(6).trim();
-      
+
       // 4. 处理特殊标记
-      if (data === '[DONE]') {
+      if (data === "[DONE]") {
         return [];
       }
 
       // 5. JSON 完整性检查
       try {
         // 检查是否是完整的 JSON 对象
-        if (data.startsWith('{') && data.endsWith('}')) {
+        if (data.startsWith("{") && data.endsWith("}")) {
           const parsed = JSON.parse(data);
           return [parsed];
-        } 
+        }
         // 检查是否是不完整的 JSON 或其他非 JSON 数据
         else {
           return [];
@@ -417,7 +461,7 @@ export async function openAIWithStream(
   }
 }
 
-// 优化版本：使用 text 作为��数名（原始版本：使用 s 作为参数名。）参数名更具描述性，代码可读性更好。
+// 优化版本：使用 text 作为参数名（原始版本：使用 s 作为参数名。）参数名更具描述性，代码可读性更好。
 function trimLeadingWhitespace(text: string): string {
   return text.replace(/^\s+/, ""); // 移除字符串开头的空白字符
 }
@@ -427,7 +471,7 @@ function trimLeadingWhitespace(text: string): string {
 
 // 1.异步处理：使用 async/await 语法使代码更洁、读。
 // 2.空值检查：增加了对 value 是否为 null 或 undefined 的检查，避免因空值导致的运行时错误。
-// 3.超时机制：增加了超时机制，防止长时间挂起，提高系统的健壮性和用户体验。
+// 3.超时机制：增加了超时机制，防止长时间起，提高系统的健壮性和用户体验。
 // 4.统一错误提示：无论错误的具体因是什么，都提供一个统一的用户友好的错误提示信息。
 
 export async function openAIWithStreamGptsID(
@@ -514,7 +558,7 @@ export async function openAIWithStreamGptsID(
               reader.cancel();
               if (currentParagraph.trim()) {
                 console.log(
-                  "来自openAIWithStreamGptsID函数中的完整提示词如下:",
+                  "来自openAIWithStreamGptsID函数中的完整提示如下:",
                   currentParagraph
                 );
                 result += currentParagraph;
@@ -617,7 +661,7 @@ const imageKeywords = [
   "图需求】", // 缺【绘
   "绘需求】", // 缺【图
   "绘图求】", // 缺【需
-  "绘图需】", // 缺【���
+  "绘图需】", // 缺【求
   "绘图需求", // 缺【】
   "【需求】", // 缺绘图
   "【图求】", // 缺绘需
@@ -739,7 +783,6 @@ export async function openAIWithStreamGptsToml(
         content: openAiOptions.chatPrompt,
       });
     }
-
     const body = {
       messages: inputMessages,
       temperature: options.temperature,
@@ -751,115 +794,135 @@ export async function openAIWithStreamGptsToml(
       stream: true,
     };
 
-    const response = await fetch(
-      `${options.chatCompletionEndpoint}/chat/completions`,
-      {
-        method: "POST",
-        body: JSON.stringify(body),
-        headers: {
-          Authorization: `Bearer ${options.apiKey}`,
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-        },
-        signal: AbortSignal.timeout(120000),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`请求失败: ${response.status}`);
-    }
-
-    if (!response.body) {
-      throw new Error("响应体为空");
-    }
-
-    const reader = response.body
-      .pipeThrough(new TextDecoderStream())
-      .getReader();
-    let result = "";
-    let currentParagraph = "";
-    let isComplete = false;
-
-    // 使用节流来处理图像提示
-    let pendingImagePrompts: string[] = [];
-    const processImagePrompts = () => {
-      if (pendingImagePrompts.length > 0) {
-        requestAnimationFrame(() => {
-          const prompt = pendingImagePrompts.shift();
-          if (prompt) {
-            onImagePrompt(prompt);
-          }
-          if (pendingImagePrompts.length > 0) {
-            processImagePrompts();
-          }
-        });
-      }
-    };
-
-    while (!isComplete) {
-      try {
-        const { value, done } = await reader.read();
-        
-        if (done) {
-          if (currentParagraph.trim()) {
-            result += currentParagraph;
-            onContent(currentParagraph);
-            
-            // 检查是否包含绘图需求
-            const { hasRequest, prompt } = checkAndExtractImagePrompt(
-              currentParagraph.trim(),
-              true
-            );
-            if (hasRequest) {
-              pendingImagePrompts.push(prompt);
-              processImagePrompts();
-            }
-          }
-          isComplete = true;
-          break;
+    try {
+      const response = await fetch(
+        `${options.chatCompletionEndpoint}/chat/completions`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: {
+            Authorization: `Bearer ${options.apiKey}`,
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+          },
+          signal: AbortSignal.timeout(120000),
         }
+      );
 
-        const chunks = getDataFromStreamValue(value);
-        for (const chunk of chunks) {
-          if (chunk.choices?.[0]?.delta?.content) {
-            const content = chunk.choices[0].delta.content;
-            currentParagraph += content;
+      // 添加响应检查
+      console.log("响应状态检查:", {
+        status: response.status,
+        ok: response.ok,
+        contentType: response.headers.get("Content-Type"),
+      });
 
-            // 检查是否有完整段落
-            if (content.includes("\n\n") || content.includes("\n### ")) {
-              const paragraphs = currentParagraph.split(/\n\n|\n### /);
-              for (let i = 0; i < paragraphs.length - 1; i++) {
-                const paragraph = paragraphs[i].trim();
-                if (paragraph) {
-                  result += paragraph + "\n\n";
-                  onContent(paragraph + "\n\n");
-                  
-                  // 检查是否包含绘图需求
-                  const { hasRequest, prompt } = checkAndExtractImagePrompt(
-                    paragraph,
-                    false
-                  );
-                  if (hasRequest) {
-                    pendingImagePrompts.push(prompt);
-                    processImagePrompts();
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        console.log("错误响应内容:", errorMessage);
+        return handleOpenAIError(new Error(errorMessage));
+      }
+
+      if (response.headers.get("Content-Type") !== "text/event-stream") {
+        const errorMessage = `Unexpected Content-Type: ${response.headers.get(
+          "Content-Type"
+        )}`;
+        console.error(errorMessage);
+        return handleOpenAIError(new Error(errorMessage));
+      }
+
+      if (response.body) {
+        const reader = response.body
+          .pipeThrough(new TextDecoderStream())
+          .getReader();
+        let result = "";
+        let currentParagraph = "";
+
+        const readStream = async (): Promise<any> => {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              reader.cancel();
+              if (currentParagraph.trim()) {
+                console.log(
+                  "来自openAIWithStreamGptsToml函数中的完整提示词如下:",
+                  currentParagraph
+                );
+                const { hasRequest, prompt } = checkAndExtractImagePrompt(
+                  currentParagraph.trim(),
+                  true
+                );
+                if (hasRequest) {
+                  result += currentParagraph + "\n为该段落绘图中，请稍后...\n";
+                  onContent(currentParagraph + "\n为该段落绘图中，请稍后...\n");
+                  onImagePrompt(prompt);
+                } else {
+                  result += currentParagraph;
+                  onContent(currentParagraph);
+                }
+              }
+              onStop();
+              return result;
+            }
+
+            if (value) {
+              const data = getDataFromStreamValue(value);
+              if (data && data.length > 0) {
+                for (const item of data) {
+                  if (item.choices[0]?.delta?.content) {
+                    const content = item.choices[0].delta.content;
+                    currentParagraph += content;
+
+                    if (
+                      content.includes("\n\n") ||
+                      content.includes("\n### ")
+                    ) {
+                      const paragraphs = currentParagraph.split(/\n\n|\n### /);
+                      for (let i = 0; i < paragraphs.length - 1; i++) {
+                        const paragraph = paragraphs[i].trim();
+                        if (paragraph) {
+                          console.log("完整段落:", paragraph);
+                          const { hasRequest, prompt } =
+                            checkAndExtractImagePrompt(paragraph, false);
+                          if (hasRequest) {
+                            result +=
+                              paragraph + "\n为该段落绘图中，请稍后...\n";
+                            onContent(
+                              paragraph + "\n为该段落绘图中，请稍后...\n"
+                            );
+                            onImagePrompt(prompt);
+                          } else {
+                            result += paragraph + "\n\n";
+                            onContent(paragraph + "\n\n");
+                          }
+                        }
+                      }
+                      currentParagraph = paragraphs[paragraphs.length - 1];
+                    }
                   }
                 }
               }
-              currentParagraph = paragraphs[paragraphs.length - 1];
             }
           }
-        }
-      } catch (error) {
-        reader.cancel();
-        throw error;
-      }
-    }
+        };
 
-    onStop();
-    return result;
+        return readStream().catch((error) => {
+          console.error("读取流时发生错误:", error);
+          return handleOpenAIError(error);
+        });
+      }
+      return null;
+    } catch (e: any) {
+      console.error("请求异常:", e);
+      return handleOpenAIError(e);
+    }
   } catch (error: any) {
-    onStop();
-    return handleOpenAIError(error);
+    // 如果是内容审核错误，直接抛出，让上层处理
+    if (error.type || error.silent) {
+      throw error;
+    }
+    // 其他未知错误才显示通用错误消息
+    console.error("Error in openAIWithStreamGptsToml:", error);
+    throw new Error("发生未知错误，请检查控制台日志并稍后重试");
   }
 }
 
@@ -880,31 +943,48 @@ export async function dallE_gptsToml(
       dangerouslyAllowBrowser: true,
     });
 
-    // 处理图片尺寸
-    let imageSizeRequest: OpenAI.ImageGenerateParams["size"] = "1024x1024";
+    // 定义有效的尺寸类型
+    type ValidSize = "256x256" | "512x512" | "1024x1024" | "1024x1792" | "1792x1024";
 
-    if (size.includes("x")) {
-      // 验证尺寸格式
-      const validSizes = [
-        "256x256",
-        "512x512",
-        "1024x1024",
-        "1024x1792",
-        "1792x1024",
-      ] as const;
-
-      if (validSizes.includes(size as any)) {
-        imageSizeRequest = size as OpenAI.ImageGenerateParams["size"];
+    // 改进尺寸处理逻辑
+    const imageSizeRequest = (() => {
+      if (!size) {
+        return "1024x1024" as ValidSize;
       }
-    } else {
+
+      // 处理包含 "*" 的情况
+      const sizeStr = size.replace("*", "x");
+
+      // 如果已经是正确格式（包含 "x"），检查是否为有效尺寸
+      if (sizeStr.includes("x")) {
+        const validSizes: ValidSize[] = [
+          "256x256",
+          "512x512",
+          "1024x1024",
+          "1024x1792",
+          "1792x1024"
+        ];
+        return (validSizes.includes(sizeStr as ValidSize) ? sizeStr : "1024x1024") as ValidSize;
+      }
+
       // 处理单个数字的情况
-      const sizeMap: Record<string, OpenAI.ImageGenerateParams["size"]> = {
-        "256": "256x256",
-        "512": "512x512",
-        "1024": "1024x1024",
-      };
-      imageSizeRequest = sizeMap[size] || "1024x1024";
-    }
+      const num = parseInt(sizeStr);
+      if (!isNaN(num)) {
+        const sizeThresholds = [
+          { threshold: 256, size: "256x256" },
+          { threshold: 512, size: "512x512" },
+          { threshold: 1024, size: "1024x1024" },
+          { threshold: 1408, size: "1024x1024" }, // 1024~1408 返回 1024x1024
+          { threshold: 1792, size: "1792x1024" }, // 1408~1792 返回 1792x1024
+          { threshold: Infinity, size: "1024x1024" } // 超过1792返回1024x1024
+        ] as const;
+
+        const result = sizeThresholds.find(({ threshold }) => num <= threshold);
+        return result?.size as ValidSize;
+      }
+
+      return "1024x1024" as ValidSize;
+    })();
 
     const imageParameters: OpenAI.ImageGenerateParams = {
       prompt,
@@ -916,10 +996,33 @@ export async function dallE_gptsToml(
     };
 
     const response = await backOff(
-      () => openai.images.generate(imageParameters),
-      retryOptions
+      async () => {
+        try {
+          const result = await openai.images.generate(imageParameters);
+          return result;
+        } catch (error: any) {
+          console.error("DALL-E API Error:", {
+            status: error.status,
+            message: error.message,
+            response: error.response?.data,
+          });
+          
+          if (error.response?.status === 401) {
+            throw new Error("API 密钥无效或未正确配置。请检查您的 API 密钥设置。");
+          }
+          throw error;
+        }
+      },
+      {
+        ...retryOptions,
+        retry: (error: any, attemptNumber: number) => {
+          console.log(`Retry attempt ${attemptNumber} due to:`, error);
+          return retryOptions.retry(error);
+        },
+      }
     );
 
+    // 添加 URL 检查
     const imageUrl = response.data[0]?.url;
     if (!imageUrl) {
       throw new Error("No image URL in response");
@@ -927,7 +1030,6 @@ export async function dallE_gptsToml(
 
     return { url: imageUrl };
   } catch (error: any) {
-    // 使用 handleOpenAIError 统一处理错误
     const result = handleOpenAIError(error);
     return { error: result.error };
   }

@@ -579,88 +579,58 @@ export async function createRunGptsTomlCommand(command: Command) {
                 throw new JSONParseError('提示词不能为空', jsonString);
               }
 
-              // 构建标准化的对象
+              // 构建标准化的对象并显示
               const promptObj = {
                 prompt: promptText,
                 size: (jsonData.size?.toString() || '1024x1024').trim(),
                 n: Math.min(Math.max(1, parseInt(String(jsonData.n || 1), 10)), 10)
               };
 
-              // 在响应块中显示完整的提示词
-              result = `提示词：\n\`\`\`json\n${JSON.stringify(promptObj, null, 2)}\n\`\`\`\n\n`;
+              // 先解构获取 n
+              const { prompt: finalPromptText, size, n } = promptObj;
+              console.log(`计划生成 ${n} 幅图片`);
+
+              // 然后再使用 n 显示进度
+              result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n\n准备生成 ${n} 幅图片...\n`;
               if (insertBlock) {
                 await logseq.Editor.updateBlock(insertBlock.uuid, result);
               }
 
-              console.log("处理的提示词对象:", promptObj);
+              // 构建所有图片的提示词
+              const imagePrompts = Array.from({ length: n }, (_, i) => ({
+                prompt: `${finalPromptText}，本指令：绘制第${i + 1}幅子场景`,
+                size
+              }));
 
-              // 使用解构时重命名变量
-              const { prompt: finalPromptText, size, n } = promptObj;
-              console.log(`计划生成 ${n} 幅图片`);
-
-              let processedImages = [];
-
-              for (let i = 1; i <= n; i++) {
-                try {
-                  // 构建当前场景的完整提示词
-                  const currentPrompt = `${finalPromptText}本指令：绘制第${i}幅子场景`;
-                  const currentPromptJson = {
-                    prompt: currentPrompt,
-                    size: size,
-                    n: 1,
-                  };
-
-                  console.log(`\n开始处理第 ${i}/${n} 幅图片`);
-                  console.log("当前完整提示词:", JSON.stringify(currentPromptJson, null, 2));
-
-                  // 定义占位符
-                  const placeholder = `正在生成第 ${i} 张图片，请稍后...\n`;
-                  result += placeholder;
-
-                  if (insertBlock) {
-                    await logseq.Editor.updateBlock(insertBlock.uuid, result);
-                  }
-
-                  const imageUrl = await dallE_gptsToml(currentPrompt, openAISettings, size);
-
+              // 并行处理
+              const processedResults = await Promise.allSettled(
+                imagePrompts.map(async ({prompt, size}) => {
+                  const imageUrl = await dallE_gptsToml(prompt, openAISettings, size);
                   if ("url" in imageUrl) {
-                    try {
-                      const imageFileName = await saveDalleImage(imageUrl.url);
-                      processedImages.push(imageFileName);
-                      console.log(`第 ${i}/${n} 幅图片生成完成`);
-
-                      result = `提示：\n\`\`\`json\n${JSON.stringify(promptObj, null, 2)}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
-
-                      if (insertBlock) {
-                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
-                      }
-                    } catch (error) {
-                      console.error(`第 ${i} 幅图片保存失败:`, error);
-                      handleOpenAIError(error);
-                      result = result.replace(placeholder, "图片保存失败\n");
-                      if (insertBlock) {
-                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
-                      }
-                    }
-                  } else {
-                    console.error(`第 ${i} 幅图片生成失败:`, imageUrl.error);
-                    handleOpenAIError(new Error(imageUrl.error));
-                    // 使用相同的占位符替换
-                    result = result.replace(placeholder, `第 ${i} 张图片生成失败\n`);
-                    if (insertBlock) {
-                      await logseq.Editor.updateBlock(insertBlock.uuid, result);
-                    }
+                    const imageFileName = await saveDalleImage(imageUrl.url);
+                    return { success: true, fileName: imageFileName };
                   }
-                } catch (imageError) {
-                  console.error(`图片处理错误:`, imageError);
-                  handleOpenAIError(imageError);
-                  // 确保在这里也能访问到 placeholder
-                  const placeholder = `正在生成第 ${i} 张图片，请稍后...\n`;
-                  result = result.replace(placeholder, `第 ${i} 张图片生成失败\n`);
-                  if (insertBlock) {
-                    await logseq.Editor.updateBlock(insertBlock.uuid, result);
-                  }
+                  return { success: false, error: imageUrl.error };
+                })
+              );
+
+              // 处理结果时保持 JSON 文档
+              const processedImages = processedResults.map((result, index) => {
+                if (result.status === 'fulfilled' && result.value.success) {
+                  console.log(`第 ${index + 1}/${n} 幅图片生成完成`);
+                  return result.value.fileName;
+                } else {
+                  const error = result.status === 'fulfilled' ? result.value.error : result.reason;
+                  console.error(`第 ${index + 1} 幅图片生成失败:`, error);
+                  handleOpenAIError(new Error(error));
+                  return `第 ${index + 1} 张图片生成失败`;
                 }
+              }).filter(Boolean);
+
+              // 更新最终结果，保持 JSON 文档在最上方
+              result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
+              if (insertBlock) {
+                await logseq.Editor.updateBlock(insertBlock.uuid, result);
               }
             } catch (parseError) {
               console.error("JSON 解析错误:", parseError);
@@ -709,11 +679,6 @@ export async function createRunGptsTomlCommand(command: Command) {
     }
   };
 }
-
-/* const updateBlock = async (uuid: string, content: string) => {
-  await logseq.Editor.updateBlock(uuid, content);
-  // console.log(`Updated block with UUID: ${uuid}`);
-}; */
 
 export async function runDalleBlock(b: IHookEvent) {
   const openAISettings = getOpenaiSettings();
@@ -804,4 +769,39 @@ export async function runReadImageURL(b: IHookEvent) {
       handleOpenAIError(e);
     }
   }
+}
+
+// 添加格式化 JSON 的函数
+function formatJsonString(jsonObj: any): string {
+  // 特殊处理 prompt 字段
+  if (jsonObj.prompt) {
+    // 添加段落分隔并确保换行符被保留
+    const formattedPrompt = jsonObj.prompt
+      // 先统一换行符
+      .replace(/\r\n/g, '\n')
+      // 在主要段落前添加换行
+      .replace(/(故事背景|场景展示|绘图风格|角色特征|核心场景|背景)：/g, '\n$1：')
+      // 在角色描述前添加换行
+      .replace(/( - [^，。：]+)：/g, '\n$1：')
+      // 在子场景前添加换行
+      .replace(/(第[一二三四五六七八九十]幅)/g, '\n$1')
+      // 确保段落之间有足够空行
+      .replace(/\n\n+/g, '\n\n')
+      // 移除开头的空行
+      .replace(/^\n+/, '')
+      // 确保每行前面有适当的缩进
+      .split('\n')
+      .map((line: string) => line.trim())
+      .join('\n    ');  // 4个空格的缩进
+
+    // 创建格式化的 JSON 字符串
+    return `{
+  "prompt": "${formattedPrompt}",
+  "size": "${jsonObj.size}",
+  "n": ${jsonObj.n}
+}`;
+  }
+
+  // 如果没有 prompt 字段，使用普通格式化
+  return JSON.stringify(jsonObj, null, 2);
 }

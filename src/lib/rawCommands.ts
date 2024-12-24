@@ -602,30 +602,19 @@ export async function createRunGptsTomlCommand(command: Command) {
                 size
               }));
 
-              // 并行处理
-              const processedResults = await Promise.allSettled(
-                imagePrompts.map(async ({prompt, size}) => {
-                  const imageUrl = await dallE_gptsToml(prompt, openAISettings, size);
-                  if ("url" in imageUrl) {
-                    const imageFileName = await saveDalleImage(imageUrl.url);
-                    return { success: true, fileName: imageFileName };
-                  }
-                  return { success: false, error: imageUrl.error };
-                })
-              );
+              // 初始显示 JSON 文档
+              result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n`;
+              if (insertBlock) {
+                await logseq.Editor.updateBlock(insertBlock.uuid, result);
+              }
 
-              // 处理结果时保持 JSON 文档
-              const processedImages = processedResults.map((result, index) => {
-                if (result.status === 'fulfilled' && result.value.success) {
-                  console.log(`第 ${index + 1}/${n} 幅图片生成完成`);
-                  return result.value.fileName;
-                } else {
-                  const error = result.status === 'fulfilled' ? result.value.error : result.reason;
-                  console.error(`第 ${index + 1} 幅图片生成失败:`, error);
-                  handleOpenAIError(new Error(error));
-                  return `第 ${index + 1} 张图片生成失败`;
-                }
-              }).filter(Boolean);
+              // 逐个处理图片并实时显示
+              const processedImages = await processImagesSequentially(
+                imagePrompts,
+                openAISettings,
+                insertBlock,
+                result
+              );
 
               // 更新最终结果，保持 JSON 文档在最上方
               result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
@@ -678,6 +667,49 @@ export async function createRunGptsTomlCommand(command: Command) {
       handleOpenAIError(error);
     }
   };
+}
+
+// 修改并行处理部分
+async function processImagesSequentially(
+  imagePrompts: Array<{prompt: string, size: string}>,
+  openAISettings: OpenAIOptions,
+  insertBlock: any,
+  currentResult: string
+) {
+  const processedImages: string[] = [];
+
+  // 逐个处理每个图片
+  for (let i = 0; i < imagePrompts.length; i++) {
+    try {
+      const imageUrl = await dallE_gptsToml(imagePrompts[i].prompt, openAISettings, imagePrompts[i].size);
+      
+      if ("url" in imageUrl) {
+        // 保存图片
+        const imageFileName = await saveDalleImage(imageUrl.url);
+        processedImages.push(imageFileName);
+        
+        // 构建完整的显示内容：JSON + 所有已生成图片
+        const updatedResult = `${currentResult}\n${processedImages.join("\n")}`;
+        
+        // 更新显示
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, updatedResult);
+        }
+        
+        console.log(`第 ${i + 1}/${imagePrompts.length} 幅图片生成完成`);
+      } else {
+        console.error(`第 ${i + 1} 幅图片生成失败:`, imageUrl.error);
+        handleOpenAIError(new Error(imageUrl.error));
+        processedImages.push(`第 ${i + 1} 张图片生成失败`);
+      }
+    } catch (error) {
+      console.error(`第 ${i + 1} 幅图片处理错误:`, error);
+      handleOpenAIError(error);
+      processedImages.push(`第 ${i + 1} 张图片生成失败`);
+    }
+  }
+
+  return processedImages;
 }
 
 export async function runDalleBlock(b: IHookEvent) {

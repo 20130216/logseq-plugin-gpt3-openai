@@ -1,26 +1,18 @@
-import { performanceOptimizer } from './performance';
-import { resourceOptimizer } from './resourceOptimizer';
+import { ResourceOptimizer } from './resourceOptimizer';
 
 // 统一的优化器管理接口
 export const appOptimizer = {
-  performance: performanceOptimizer,
-  resource: resourceOptimizer,
-  
-  // 初始化所有优化器
-  initialize: () => {
-    // 初始化资源优化
-    appOptimizer.resource.fontLoader.loadChineseFonts();
-    appOptimizer.resource.resourceLoader.optimizeLoadOrder();
-
-    // 初始化性能优化
-    appOptimizer.performance.optimizeFontLoading();
+  initialize() {
+    // 使用新的 ResourceOptimizer 类
+    ResourceOptimizer.initialize();
   },
 
-  // 应用容器优化
-  setupContainer: (container: HTMLElement | null) => {
-    if (container) {
-      appOptimizer.performance.addPassiveEventListeners(container);
-    }
+  setupContainer(container: HTMLElement | null) {
+    if (!container) return;
+    
+    // 添加性能优化相关的设置
+    container.style.willChange = 'transform';
+    container.style.transform = 'translateZ(0)';
   }
 };
 

@@ -11,11 +11,15 @@ import { BlockEntity, IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { useImmer } from 'use-immer';
 import { showMessage } from './lib/logseq';
 import { appOptimizer } from './lib/optimizers';
+import { ResourceOptimizer } from './lib/resourceOptimizer';
 
 logseq.useSettingsSchema(settingsSchema);
 
 // 主入口函数
-async function main() {
+const main = async () => {
+  // 初始化资源预加载
+  await ResourceOptimizer.initialize();
+  
   // 初始化所有优化器
   appOptimizer.initialize();
   
@@ -40,7 +44,7 @@ async function main() {
   logseq.setMainUIInlineStyle({
     zIndex: 11,
   });
-}
+};
 
 logseq.ready(main).catch(console.error);
 

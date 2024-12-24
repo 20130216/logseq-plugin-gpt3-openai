@@ -21,123 +21,137 @@ import { getOpenaiSettings } from "./settings";
 import { Command } from "../ui/LogseqAI";
 import { validateContent } from "./contentModeration";
 import { JSONParseError } from "./types/errors";
+import { ResourceOptimizer } from "./resourceOptimizer";
 
 // 10种应用场景的分门别类处理：所有异常最终都会被 runGptBlock 捕获并传递给 handleOpenAIError 函数来处理，那么你只需要在 handleOpenAIError 中分门别类地处理各种异常情况即可。这样可以确保所有的异常处理逻辑集中在一个地方，便于维护和管理。
 // 10.26号上午定稿 下午又特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")额外的异常处理方式;
 export function handleOpenAIError(e: any) {
   // JSON 解析错误处理
   if (e instanceof JSONParseError) {
-    const message = '提示词格式错误: ' + (e.message || '请检查命令模板');
-    showMessage(message, 'warning');
-    console.debug('JSON 解析错误详情:', {
+    const message = "提示词格式错误: " + (e.message || "请检查命令模板");
+    showMessage(message, "warning");
+    console.debug("JSON 解析错误详情:", {
       message: e.message,
       jsonString: e.jsonString,
-      stack: e.stack
+      stack: e.stack,
     });
     return { error: message };
   }
 
-  if (e instanceof SyntaxError && e.message.includes('JSON')) {
-    const message = '提示词格式无效: ' + e.message;
-    showMessage(message, 'warning');
-    console.debug('JSON 语法错误:', e);
+  if (e instanceof SyntaxError && e.message.includes("JSON")) {
+    const message = "提示词格式无效: " + e.message;
+    showMessage(message, "warning");
+    console.debug("JSON 语法错误:", e);
     return { error: message };
   }
 
   // 先处理已知的特定错误类型
   if (e instanceof JSONParseError) {
-    const message = '提示词格式错误，请检查命令模板';
-    showMessage(message, 'warning');
-    console.debug('JSON 解析错误详情:', e.jsonString);
+    const message = "提示词格式错误，请检查命令模板";
+    showMessage(message, "warning");
+    console.debug("JSON 解析错误详情:", e.jsonString);
     return { error: message };
   }
 
   // 图片生成相关错误
-  if (e.message?.includes('image generation') || e.message?.includes('DALL-E')) {
-    showMessage('图片生成失败，请稍后重试', 'error');
-    return { error: '图片生成失败' };
+  if (
+    e.message?.includes("image generation") ||
+    e.message?.includes("DALL-E")
+  ) {
+    showMessage("图片生成失败，请稍后重试", "error");
+    return { error: "图片生成失败" };
   }
 
   // 图片保存错误
-  if (e.message?.includes('saving image') || e.message?.includes('file system')) {
-    showMessage('图片保存失败，请检查权限', 'error');
-    return { error: '图片保存失败' };
+  if (
+    e.message?.includes("saving image") ||
+    e.message?.includes("file system")
+  ) {
+    showMessage("图片保存失败，请检查权限", "error");
+    return { error: "图片保存失败" };
   }
 
   // 内容审核错误
   if (e.type && e.message) {
-    const severity = e.level === 'extreme' ? 'error' 
-                  : e.level === 'mild' ? 'warning' 
-                  : 'warning';
-    const message = e.message + (e.words ? ` ------"${e.words.join('", "')}"` : '');
+    const severity =
+      e.level === "extreme"
+        ? "error"
+        : e.level === "mild"
+        ? "warning"
+        : "warning";
+    const message =
+      e.message + (e.words ? ` ------"${e.words.join('", "')}"` : "");
     showMessage(message, severity);
     return { error: message };
   }
 
   // API 错误
   if (e.error?.type && e.error?.message) {
-    showMessage(e.error.message, 'error');
+    showMessage(e.error.message, "error");
     return { error: e.error.message };
   }
 
   // 未知但有类型和消息的错误
-  if (typeof e === 'object' && e !== null && e.type && e.message) {
-    showMessage(e.message, 'error');
+  if (typeof e === "object" && e !== null && e.type && e.message) {
+    showMessage(e.message, "error");
     return { error: e.message };
   }
 
   // API 密钥相关错误
-  if (e.message?.includes('API key')) {
-    showMessage('API 密钥无效或未设置，请检查您的 API 密钥配置！', 'error');
-    return { error: 'API 密钥无效或未设置' };
+  if (e.message?.includes("API key")) {
+    showMessage("API 密钥无效或未设置，请检查您的 API 密钥配置！", "error");
+    return { error: "API 密钥无效或未设置" };
   }
 
   // 配额错误
-  if (e.message?.includes('insufficient_quota')) {
-    showMessage('API 使用额度已耗尽，请检查您的账户余额！', 'error');
-    return { error: 'API 使用额度已耗尽' };
+  if (e.message?.includes("insufficient_quota")) {
+    showMessage("API 使用额度已耗尽，请检查您的账户余额！", "error");
+    return { error: "API 使用额度已耗尽" };
   }
 
   // 网络错误
-  if (e instanceof TypeError && e.message === 'Failed to fetch') {
-    showMessage('网络连接失败，请检查网络连接！', 'error');
-    return { error: '网络连接失败' };
+  if (e instanceof TypeError && e.message === "Failed to fetch") {
+    showMessage("网络连接失败，请检查网络连接！", "error");
+    return { error: "网络连接失败" };
   }
 
   // 超时错误
-  if (e.name === 'AbortError' || e.name === 'TimeoutError') {
-    showMessage('请求超时，请稍后重试', 'error');
-    return { error: '请求超时' };
+  if (e.name === "AbortError" || e.name === "TimeoutError") {
+    showMessage("请求超时，请稍后重试", "error");
+    return { error: "请求超时" };
   }
 
   // 用户取消
-  if (e.name === 'DOMException' && e.message.includes('The user aborted a request')) {
-    showMessage('用户取消了请求', 'warning');
-    return { error: '用户取消请求' };
+  if (
+    e.name === "DOMException" &&
+    e.message.includes("The user aborted a request")
+  ) {
+    showMessage("用户取消了请求", "warning");
+    return { error: "用户取消请求" };
   }
 
   // 流处理错误
-  if (e.message?.includes('流超时') || e.message?.includes('stream timeout')) {
-    showMessage('响应流处理超时，请重试', 'error');
-    return { error: '流处理超时' };
+  if (e.message?.includes("流超时") || e.message?.includes("stream timeout")) {
+    showMessage("响应流处理超时，请重试", "error");
+    return { error: "流处理超时" };
   }
 
   // 标准 Error 实例
   if (e instanceof Error) {
-    showMessage(e.message, 'error');
+    showMessage(e.message, "error");
     return { error: e.message };
   }
 
   // 有消息的未知错误
   if (e.message) {
-    showMessage(e.message, 'error');
+    showMessage(e.message, "error");
     return { error: e.message };
   }
 
   // 完全未知的错误
-  console.error('Unexpected error:', e);
-  showMessage('发生未知错误，请稍后重试', 'error');
-  return { error: '未知错误' };
+  console.error("Unexpected error:", e);
+  showMessage("发生未知错误，请稍后重试", "error");
+  return { error: "未知错误" };
 }
 
 async function validateSettings(settings: OpenAIOptions) {
@@ -379,7 +393,12 @@ function parseImageSizeFromPrompt(prompt: string): string | null {
 export async function createRunGptsTomlCommand(command: Command) {
   return async (b: IHookEvent) => {
     try {
-      const openAISettings = getOpenaiSettings();
+      // 获取预加载的设置
+      const openAISettings = await ResourceOptimizer.getResource(
+        "openai-settings"
+      );
+
+      // 仍然需要验证，以防设置发生变化
       await validateSettings(openAISettings);
 
       const currentBlock = await logseq.Editor.getBlock(b.uuid);
@@ -440,8 +459,17 @@ export async function createRunGptsTomlCommand(command: Command) {
       const onImagePrompt = async (imagePrompt: string) => {
         if (isParseJson) return;
 
-        const placeholder = "为该段落绘图中，请稍后...\n";
-        pendingImagePrompts.set(imagePrompt, placeholder);
+        // 生成唯一的占位符 ID，但在显示时隐藏
+        const placeholderId = Date.now();
+        const visiblePlaceholder = "为该段落绘图中，请稍后...\n";
+        const uniquePlaceholder = `为该段落绘图中，请稍后...(${placeholderId})\n`;
+        pendingImagePrompts.set(imagePrompt, uniquePlaceholder);
+
+        // 显示给用户看的是没有 ID 的占位符
+        result += visiblePlaceholder;
+        if (insertBlock) {
+          await logseq.Editor.updateBlock(insertBlock.uuid, result);
+        }
 
         const maxPromptLength = 1000;
         let truncatedPrompt = imagePrompt;
@@ -452,6 +480,9 @@ export async function createRunGptsTomlCommand(command: Command) {
           );
         }
 
+        // 添加当前绘制场景的日志
+        console.log(`当前指令：${imagePrompt}`);
+
         const imageResponse = await dallE_gptsToml(
           truncatedPrompt,
           openAISettings,
@@ -461,20 +492,21 @@ export async function createRunGptsTomlCommand(command: Command) {
         if ("url" in imageResponse) {
           try {
             const imageFileName = await saveDalleImage(imageResponse.url);
-            result = result.replace(placeholder, `${imageFileName}\n`);
+            // 使用带 ID 的占位符进行替换，但用户看不到 ID
+            result = result.replace(visiblePlaceholder, `${imageFileName}\n`);
             if (insertBlock) {
               await logseq.Editor.updateBlock(insertBlock.uuid, result);
             }
           } catch (error) {
             console.error("Failed to save image:", error);
-            result = result.replace(placeholder, "图片保存失败\n");
+            result = result.replace(visiblePlaceholder, "图片保存失败\n");
             if (insertBlock) {
               await logseq.Editor.updateBlock(insertBlock.uuid, result);
             }
           }
         } else {
           console.error("Failed to generate image:", imageResponse.error);
-          result = result.replace(placeholder, "图片生成失败\n");
+          result = result.replace(visiblePlaceholder, "图片生成失败\n");
           if (insertBlock) {
             await logseq.Editor.updateBlock(insertBlock.uuid, result);
           }
@@ -505,11 +537,11 @@ export async function createRunGptsTomlCommand(command: Command) {
               // 清理 JSON 字符串中的特殊字符
               jsonString = jsonString
                 // 移除不可见字符
-                .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
+                .replace(/[\x00-\x1F\x7F-\x9F]/g, "")
                 // 处理换行符和制表符
-                .replace(/[\r\n\t]/g, ' ')
+                .replace(/[\r\n\t]/g, " ")
                 // 处理多余的空格
-                .replace(/\s+/g, ' ')
+                .replace(/\s+/g, " ")
                 // 处理错误的转义引号
                 .replace(/\\"/g, '"')
                 // 处理多余的引号
@@ -520,11 +552,11 @@ export async function createRunGptsTomlCommand(command: Command) {
                 .trim();
 
               // 确保是有效的 JSON 对象格式
-              if (!jsonString.startsWith('{')) {
-                jsonString = '{' + jsonString;
+              if (!jsonString.startsWith("{")) {
+                jsonString = "{" + jsonString;
               }
-              if (!jsonString.endsWith('}')) {
-                jsonString = jsonString + '}';
+              if (!jsonString.endsWith("}")) {
+                jsonString = jsonString + "}";
               }
 
               // 尝试解析 JSON
@@ -540,24 +572,25 @@ export async function createRunGptsTomlCommand(command: Command) {
                     // 修复属性值格式
                     .replace(/:\s*([^",{\[\s][^,}\]]*)/g, ':"$1"')
                     // 修复多余的逗号
-                    .replace(/,\s*([}\]])/g, '$1')
+                    .replace(/,\s*([}\]])/g, "$1")
                     // 修复错误的引号嵌套
                     .replace(/"([^"]*)""/g, '"$1"');
 
-                  console.debug('修复后的 JSON 字符串:', jsonString);
+                  console.debug("修复后的 JSON 字符串:", jsonString);
                   jsonData = JSON.parse(jsonString);
                 } catch (secondError) {
-                  console.error('JSON 解析详情:', {
+                  console.error("JSON 解析详情:", {
                     originalString: jsonString,
                     firstError,
                     secondError,
-                    cleanedString: jsonString
+                    cleanedString: jsonString,
                   });
-                  
-                  const errorMessage = secondError instanceof Error 
-                    ? secondError.message 
-                    : '未知的 JSON 格式错误';
-                    
+
+                  const errorMessage =
+                    secondError instanceof Error
+                      ? secondError.message
+                      : "未知的 JSON 格式错误";
+
                   throw new JSONParseError(
                     `JSON 格式错误: ${errorMessage}`,
                     jsonString
@@ -566,24 +599,31 @@ export async function createRunGptsTomlCommand(command: Command) {
               }
 
               // 验证和处理解析后的数据
-              if (!jsonData || typeof jsonData !== 'object') {
-                throw new JSONParseError('解析结果不是有效的 JSON 对象', jsonString);
+              if (!jsonData || typeof jsonData !== "object") {
+                throw new JSONParseError(
+                  "解析结果不是有效的 JSON 对象",
+                  jsonString
+                );
               }
 
               // 提取和验证必要的属性
-              const promptText = jsonData.prompt?.toString().trim() || 
-                                jsonData.text?.toString().trim() || 
-                                jsonData.description?.toString().trim();
+              const promptText =
+                jsonData.prompt?.toString().trim() ||
+                jsonData.text?.toString().trim() ||
+                jsonData.description?.toString().trim();
 
               if (!promptText) {
-                throw new JSONParseError('提示词不能为空', jsonString);
+                throw new JSONParseError("提示词不能为空", jsonString);
               }
 
               // 构建标准化的对象并显示
               const promptObj = {
                 prompt: promptText,
-                size: (jsonData.size?.toString() || '1024x1024').trim(),
-                n: Math.min(Math.max(1, parseInt(String(jsonData.n || 1), 10)), 10)
+                size: (jsonData.size?.toString() || "1024x1024").trim(),
+                n: Math.min(
+                  Math.max(1, parseInt(String(jsonData.n || 1), 10)),
+                  10
+                ),
               };
 
               // 先解构获取 n
@@ -591,19 +631,45 @@ export async function createRunGptsTomlCommand(command: Command) {
               console.log(`计划生成 ${n} 幅图片`);
 
               // 然后再使用 n 显示进度
-              result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n\n准备生成 ${n} 幅图片...\n`;
+              result = `提示词：\n\`\`\`json\n${formatJsonString(
+                promptObj
+              )}\n\`\`\`\n\n准备生成 ${n} 幅图片...\n`;
               if (insertBlock) {
                 await logseq.Editor.updateBlock(insertBlock.uuid, result);
               }
 
               // 构建所有图片的提示词
-              const imagePrompts = Array.from({ length: n }, (_, i) => ({
-                prompt: `${finalPromptText}，本指令：绘制第${i + 1}幅子场景`,
-                size
-              }));
+              const imagePrompts = Array.from({ length: n }, (_, i) => {
+                // 获取当前场景的序号
+                const sceneIndex = i + 1;
+
+                // 构建完整的提示词，包含所有背景信息和具体场景指令
+                const fullPrompt = `${finalPromptText}当前指令：绘制第${sceneIndex}幅场景`;
+
+                // 记录日志，确认提示词的完整性
+                console.log(
+                  `\n准备第${sceneIndex}幅场景的提示词：\n`,
+                  JSON.stringify(
+                    {
+                      prompt: fullPrompt,
+                      size,
+                      n: 1,
+                    },
+                    null,
+                    2
+                  )
+                );
+
+                return {
+                  prompt: fullPrompt,
+                  size,
+                };
+              });
 
               // 初始显示 JSON 文档
-              result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n`;
+              result = `提示词：\n\`\`\`json\n${formatJsonString(
+                promptObj
+              )}\n\`\`\`\n`;
               if (insertBlock) {
                 await logseq.Editor.updateBlock(insertBlock.uuid, result);
               }
@@ -617,16 +683,22 @@ export async function createRunGptsTomlCommand(command: Command) {
               );
 
               // 更新最终结果，保持 JSON 文档在最上方
-              result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
+              result = `提示词：\n\`\`\`json\n${formatJsonString(
+                promptObj
+              )}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
               if (insertBlock) {
                 await logseq.Editor.updateBlock(insertBlock.uuid, result);
               }
             } catch (parseError) {
               console.error("JSON 解析错误:", parseError);
-              handleOpenAIError(new JSONParseError(
-                parseError instanceof Error ? parseError.message : "未知的 JSON 解析错误",
-                jsonString
-              ));
+              handleOpenAIError(
+                new JSONParseError(
+                  parseError instanceof Error
+                    ? parseError.message
+                    : "未知的 JSON 解析错误",
+                  jsonString
+                )
+              );
             }
           } else {
             await handleRegularTextResponse();
@@ -671,45 +743,94 @@ export async function createRunGptsTomlCommand(command: Command) {
 
 // 修改并行处理部分
 async function processImagesSequentially(
-  imagePrompts: Array<{prompt: string, size: string}>,
+  imagePrompts: Array<{ prompt: string; size: string }>,
   openAISettings: OpenAIOptions,
   insertBlock: any,
   currentResult: string
 ) {
-  const processedImages: string[] = [];
+  // 定义结果类型
+  interface ImageResult {
+    success: boolean;
+    index: number;
+    fileName?: string;
+    error?: string;
+  }
 
-  // 逐个处理每个图片
-  for (let i = 0; i < imagePrompts.length; i++) {
+  // 并行生成所有图片
+  const imagePromises = imagePrompts.map(async (prompt, index) => {
     try {
-      const imageUrl = await dallE_gptsToml(imagePrompts[i].prompt, openAISettings, imagePrompts[i].size);
-      
+      console.log(
+        `\n准备第${index + 1}幅场景的提示词：\n`,
+        JSON.stringify(
+          {
+            prompt: prompt.prompt,
+            size: prompt.size,
+            n: 1,
+          },
+          null,
+          2
+        )
+      );
+
+      const imageUrl = await dallE_gptsToml(
+        prompt.prompt,
+        openAISettings,
+        prompt.size
+      );
+
       if ("url" in imageUrl) {
-        // 保存图片
         const imageFileName = await saveDalleImage(imageUrl.url);
-        processedImages.push(imageFileName);
-        
-        // 构建完整的显示内容：JSON + 所有已生成图片
-        const updatedResult = `${currentResult}\n${processedImages.join("\n")}`;
-        
-        // 更新显示
-        if (insertBlock) {
-          await logseq.Editor.updateBlock(insertBlock.uuid, updatedResult);
-        }
-        
-        console.log(`第 ${i + 1}/${imagePrompts.length} 幅图片生成完成`);
+        return {
+          success: true,
+          index,
+          fileName: imageFileName,
+        } as ImageResult;
       } else {
-        console.error(`第 ${i + 1} 幅图片生成失败:`, imageUrl.error);
-        handleOpenAIError(new Error(imageUrl.error));
-        processedImages.push(`第 ${i + 1} 张图片生成失败`);
+        return {
+          success: false,
+          index,
+          error: imageUrl.error,
+        } as ImageResult;
       }
     } catch (error) {
-      console.error(`第 ${i + 1} 幅图片处理错误:`, error);
-      handleOpenAIError(error);
-      processedImages.push(`第 ${i + 1} 张图片生成失败`);
+      console.error(`第 ${index + 1} 幅图片处理错误:`, error);
+      return {
+        success: false,
+        index,
+        error: error instanceof Error ? error.message : "未知错误",
+      } as ImageResult;
+    }
+  });
+
+  // 等待所有图片生成完成
+  const results = await Promise.all(imagePromises);
+  const processedImages: Array<string | null> = new Array(
+    imagePrompts.length
+  ).fill(null);
+
+  // 按顺序处理结果
+  for (const result of results.sort((a, b) => a.index - b.index)) {
+    if (result.success && result.fileName) {
+      processedImages[result.index] = result.fileName;
+      // 按顺序更新显示
+      const validImages = processedImages.filter(
+        (img): img is string => img !== null
+      );
+      const updatedResult = `${currentResult}\n${validImages.join("\n")}`;
+      if (insertBlock) {
+        await logseq.Editor.updateBlock(insertBlock.uuid, updatedResult);
+      }
+      console.log(
+        `第 ${result.index + 1}/${imagePrompts.length} 幅图片插入完成\n`
+      );
+    } else {
+      const errorMessage = `第 ${result.index + 1} 张图片生成失败`;
+      processedImages[result.index] = errorMessage;
+      handleOpenAIError(new Error(result.error || errorMessage));
     }
   }
 
-  return processedImages;
+  return processedImages.filter((img): img is string => img !== null);
 }
 
 export async function runDalleBlock(b: IHookEvent) {
@@ -810,21 +931,24 @@ function formatJsonString(jsonObj: any): string {
     // 添加段落分隔并确保换行符被保留
     const formattedPrompt = jsonObj.prompt
       // 先统一换行符
-      .replace(/\r\n/g, '\n')
+      .replace(/\r\n/g, "\n")
       // 在主要段落前添加换行
-      .replace(/(故事背景|场景展示|绘图风格|角色特征|核心场景|背景)：/g, '\n$1：')
+      .replace(
+        /(故事背景|场景展示|绘图风格|角色特征|核心场景|背景)：/g,
+        "\n$1："
+      )
       // 在角色描述前添加换行
-      .replace(/( - [^，。：]+)：/g, '\n$1：')
+      .replace(/( - [^，。：]+)：/g, "\n$1：")
       // 在子场景前添加换行
-      .replace(/(第[一二三四五六七八九十]幅)/g, '\n$1')
+      .replace(/(第[一二三四五六七八九十]幅)/g, "\n$1")
       // 确保段落之间有足够空行
-      .replace(/\n\n+/g, '\n\n')
+      .replace(/\n\n+/g, "\n\n")
       // 移除开头的空行
-      .replace(/^\n+/, '')
+      .replace(/^\n+/, "")
       // 确保每行前面有适当的缩进
-      .split('\n')
+      .split("\n")
       .map((line: string) => line.trim())
-      .join('\n    ');  // 4个空格的缩进
+      .join("\n    "); // 4个空格的缩进
 
     // 创建格式化的 JSON 字符串
     return `{

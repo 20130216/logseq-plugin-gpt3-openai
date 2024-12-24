@@ -19,85 +19,125 @@ import {
 } from "./openai";
 import { getOpenaiSettings } from "./settings";
 import { Command } from "../ui/LogseqAI";
-import { validateContent} from "./contentModeration";
+import { validateContent } from "./contentModeration";
+import { JSONParseError } from "./types/errors";
 
 // 10种应用场景的分门别类处理：所有异常最终都会被 runGptBlock 捕获并传递给 handleOpenAIError 函数来处理，那么你只需要在 handleOpenAIError 中分门别类地处理各种异常情况即可。这样可以确保所有的异常处理逻辑集中在一个地方，便于维护和管理。
-// 10.26号上午定稿 下午又特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")两种额外的异常处理方式;
+// 10.26号上午定稿 下午又特意优化了catch处理方式，从固定赋值变成e.message的动态赋值，同时在rawCommands.ts的handleOpenAIError中增加e.name === "DOMException" 和e.message.includes("流超时")额外的异常处理方式;
 export function handleOpenAIError(e: any) {
-  // 如果是内容审核错误，直接显示对应的警告
+  // JSON 解析错误处理
+  if (e instanceof JSONParseError) {
+    const message = '提示词格式错误: ' + (e.message || '请检查命令模板');
+    showMessage(message, 'warning');
+    console.debug('JSON 解析错误详情:', {
+      message: e.message,
+      jsonString: e.jsonString,
+      stack: e.stack
+    });
+    return { error: message };
+  }
+
+  if (e instanceof SyntaxError && e.message.includes('JSON')) {
+    const message = '提示词格式无效: ' + e.message;
+    showMessage(message, 'warning');
+    console.debug('JSON 语法错误:', e);
+    return { error: message };
+  }
+
+  // 先处理已知的特定错误类型
+  if (e instanceof JSONParseError) {
+    const message = '提示词格式错误，请检查命令模板';
+    showMessage(message, 'warning');
+    console.debug('JSON 解析错误详情:', e.jsonString);
+    return { error: message };
+  }
+
+  // 图片生成相关错误
+  if (e.message?.includes('image generation') || e.message?.includes('DALL-E')) {
+    showMessage('图片生成失败，请稍后重试', 'error');
+    return { error: '图片生成失败' };
+  }
+
+  // 图片保存错误
+  if (e.message?.includes('saving image') || e.message?.includes('file system')) {
+    showMessage('图片保存失败，请检查权限', 'error');
+    return { error: '图片保存失败' };
+  }
+
+  // 内容审核错误
   if (e.type && e.message) {
-    const severity =
-      e.level === "extreme"
-        ? "error"
-        : e.level === "mild"
-        ? "warning"
-        : "warning";
-    const message =
-      e.message + (e.words ? ` ------"${e.words.join('", "')}"` : "");
+    const severity = e.level === 'extreme' ? 'error' 
+                  : e.level === 'mild' ? 'warning' 
+                  : 'warning';
+    const message = e.message + (e.words ? ` ------"${e.words.join('", "')}"` : '');
     showMessage(message, severity);
     return { error: message };
   }
 
-  // 如果是 API 错误，检查是否包含已知的错误信息
+  // API 错误
   if (e.error?.type && e.error?.message) {
-    showMessage(e.error.message, "error");
+    showMessage(e.error.message, 'error');
     return { error: e.error.message };
   }
 
-  // 如果是未知错误但包含了类型和消息
-  if (typeof e === "object" && e !== null) {
-    if (e.type && e.message) {
-      showMessage(e.message, "error");
-      return { error: e.message };
-    }
+  // 未知但有类型和消息的错误
+  if (typeof e === 'object' && e !== null && e.type && e.message) {
+    showMessage(e.message, 'error');
+    return { error: e.message };
   }
 
   // API 密钥相关错误
-  if (e.message?.includes("API key")) {
-    showMessage("API 密钥无效或未设置，请检查您的 API 密钥配置！", "error");
-    return { error: "API 密钥无效或未设置" };
+  if (e.message?.includes('API key')) {
+    showMessage('API 密钥无效或未设置，请检查您的 API 密钥配置！', 'error');
+    return { error: 'API 密钥无效或未设置' };
   }
 
-  if (e.message?.includes("insufficient_quota")) {
-    showMessage("API 使用额度已耗尽，请检查您的账户余额！", "error");
-    return { error: "API 使用额度已耗尽" };
+  // 配额错误
+  if (e.message?.includes('insufficient_quota')) {
+    showMessage('API 使用额度已耗尽，请检查您的账户余额！', 'error');
+    return { error: 'API 使用额度已耗尽' };
   }
 
-  // 网络相关错误
-  if (e instanceof TypeError && e.message === "Failed to fetch") {
-    showMessage("网络连接失败，请检查网络连接！", "error");
-    return { error: "网络连接失败" };
+  // 网络错误
+  if (e instanceof TypeError && e.message === 'Failed to fetch') {
+    showMessage('网络连接失败，请检查网络连接！', 'error');
+    return { error: '网络连接失败' };
   }
 
-  if (e.name === "AbortError" || e.name === "TimeoutError") {
-    showMessage("请求超时，请稍后重试", "error");
-    return { error: "请求超时" };
+  // 超时错误
+  if (e.name === 'AbortError' || e.name === 'TimeoutError') {
+    showMessage('请求超时，请稍后重试', 'error');
+    return { error: '请求超时' };
   }
 
-  if (
-    e.name === "DOMException" &&
-    e.message.includes("The user aborted a request")
-  ) {
-    showMessage("用户取消了请求", "warning");
-    return { error: "用户取消请求" };
+  // 用户取消
+  if (e.name === 'DOMException' && e.message.includes('The user aborted a request')) {
+    showMessage('用户取消了请求', 'warning');
+    return { error: '用户取消请求' };
   }
 
-  // 如果是 Error 实例但没有匹配上述任何情况
+  // 流处理错误
+  if (e.message?.includes('流超时') || e.message?.includes('stream timeout')) {
+    showMessage('响应流处理超时，请重试', 'error');
+    return { error: '流处理超时' };
+  }
+
+  // 标准 Error 实例
   if (e instanceof Error) {
-    showMessage(e.message, "error");
+    showMessage(e.message, 'error');
     return { error: e.message };
   }
 
-  // 未知错误，但尝试提取有用信息
+  // 有消息的未知错误
   if (e.message) {
-    showMessage(e.message, "error");
+    showMessage(e.message, 'error');
     return { error: e.message };
   }
 
-  // 完全未知的错误情况
-  console.error("Unexpected error:", e);
-  showMessage("发生未知错误，请稍后重试", "error");
-  return { error: "未知错误" };
+  // 完全未知的错误
+  console.error('Unexpected error:', e);
+  showMessage('发生未知错误，请稍后重试', 'error');
+  return { error: '未知错误' };
 }
 
 async function validateSettings(settings: OpenAIOptions) {
@@ -446,7 +486,6 @@ export async function createRunGptsTomlCommand(command: Command) {
         console.log("Processing completed.");
         try {
           if (!result) {
-            // 如果没有结果，尝试重新发送请求
             await openAIWithStreamGptsToml(
               finalPrompt,
               openAISettings,
@@ -456,104 +495,186 @@ export async function createRunGptsTomlCommand(command: Command) {
             );
             return;
           }
-          
+
           const jsonMatch = fullResponse.match(/```json\s*([\s\S]*?)```/);
           if (jsonMatch && isParseJson) {
             let jsonString = jsonMatch[1].trim();
             console.log("原始完整提示词:", jsonString);
 
             try {
-              const promptMatch = jsonString.match(/"prompt"\s*:\s*"([^"]*)"/);
-              const sizeMatch = jsonString.match(/"size"\s*:\s*"([^"]*)"/);
-              const nMatch = jsonString.match(/"n"\s*:\s*(\d+)/);
+              // 清理 JSON 字符串中的特殊字符
+              jsonString = jsonString
+                // 移除不可见字符
+                .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
+                // 处理换行符和制表符
+                .replace(/[\r\n\t]/g, ' ')
+                // 处理多余的空格
+                .replace(/\s+/g, ' ')
+                // 处理错误的转义引号
+                .replace(/\\"/g, '"')
+                // 处理多余的引号
+                .replace(/"{2,}/g, '"')
+                // 处理属性名中多余的引号
+                .replace(/"\\?"([^"]+)\\?""\s*:/g, '"$1":')
+                // 移除开头和结尾的空格
+                .trim();
 
-              if (!promptMatch || !sizeMatch || !nMatch) {
-                throw new Error("无法提取必要的 JSON 属性");
+              // 确保是有效的 JSON 对象格式
+              if (!jsonString.startsWith('{')) {
+                jsonString = '{' + jsonString;
+              }
+              if (!jsonString.endsWith('}')) {
+                jsonString = jsonString + '}';
               }
 
+              // 尝试解析 JSON
+              let jsonData;
+              try {
+                jsonData = JSON.parse(jsonString);
+              } catch (firstError) {
+                try {
+                  // 如果第一次解析失败，尝试进一步修复
+                  jsonString = jsonString
+                    // 修复属性名格式
+                    .replace(/([{,]\s*)([^"{\s][^:]*?):/g, '$1"$2":')
+                    // 修复属性值格式
+                    .replace(/:\s*([^",{\[\s][^,}\]]*)/g, ':"$1"')
+                    // 修复多余的逗号
+                    .replace(/,\s*([}\]])/g, '$1')
+                    // 修复错误的引号嵌套
+                    .replace(/"([^"]*)""/g, '"$1"');
+
+                  console.debug('修复后的 JSON 字符串:', jsonString);
+                  jsonData = JSON.parse(jsonString);
+                } catch (secondError) {
+                  console.error('JSON 解析详情:', {
+                    originalString: jsonString,
+                    firstError,
+                    secondError,
+                    cleanedString: jsonString
+                  });
+                  
+                  const errorMessage = secondError instanceof Error 
+                    ? secondError.message 
+                    : '未知的 JSON 格式错误';
+                    
+                  throw new JSONParseError(
+                    `JSON 格式错误: ${errorMessage}`,
+                    jsonString
+                  );
+                }
+              }
+
+              // 验证和处理解析后的数据
+              if (!jsonData || typeof jsonData !== 'object') {
+                throw new JSONParseError('解析结果不是有效的 JSON 对象', jsonString);
+              }
+
+              // 提取和验证必要的属性
+              const promptText = jsonData.prompt?.toString().trim() || 
+                                jsonData.text?.toString().trim() || 
+                                jsonData.description?.toString().trim();
+
+              if (!promptText) {
+                throw new JSONParseError('提示词不能为空', jsonString);
+              }
+
+              // 构建标准化的对象
               const promptObj = {
-                prompt: promptMatch[1],
-                size: sizeMatch[1],
-                n: parseInt(nMatch[1]),
+                prompt: promptText,
+                size: (jsonData.size?.toString() || '1024x1024').trim(),
+                n: Math.min(Math.max(1, parseInt(String(jsonData.n || 1), 10)), 10)
               };
 
               // 在响应块中显示完整的提示词
-              result = `提示词：\n\`\`\`json\n${jsonString}\n\`\`\`\n\n`;
+              result = `提示词：\n\`\`\`json\n${JSON.stringify(promptObj, null, 2)}\n\`\`\`\n\n`;
               if (insertBlock) {
                 await logseq.Editor.updateBlock(insertBlock.uuid, result);
               }
 
-              const { prompt, size = "1024x1024", n = 1 } = promptObj;
+              console.log("处理的提示词对象:", promptObj);
+
+              // 使用解构时重命名变量
+              const { prompt: finalPromptText, size, n } = promptObj;
               console.log(`计划生成 ${n} 幅图片`);
 
               let processedImages = [];
 
               for (let i = 1; i <= n; i++) {
-                // 构建当前场景的完整提示词
-                const currentPrompt = `${prompt}，本指令：绘制第${i}幅子场景`;
+                try {
+                  // 构建当前场景的完整提示词
+                  const currentPrompt = `${finalPromptText}本指令：绘制第${i}幅子场景`;
+                  const currentPromptJson = {
+                    prompt: currentPrompt,
+                    size: size,
+                    n: 1,
+                  };
 
-                // 构建完整的提示词对象
-                const currentPromptJson = {
-                  prompt: currentPrompt,
-                  size: size,
-                  n: 1,
-                };
+                  console.log(`\n开始处理第 ${i}/${n} 幅图片`);
+                  console.log("当前完整提示词:", JSON.stringify(currentPromptJson, null, 2));
 
-                // 记录当前正在处理的完整示词
-                console.log(`\n开始处理第 ${i}/${n} 幅图片`);
-                console.log(
-                  "当前完整提示词:",
-                  JSON.stringify(currentPromptJson, null, 2)
-                );
+                  // 定义占位符
+                  const placeholder = `正在生成第 ${i} 张图片，请稍后...\n`;
+                  result += placeholder;
 
-                const placeholder = `正在生成第 ${i} 张图片，请稍后...\n`;
-                result += placeholder;
+                  if (insertBlock) {
+                    await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                  }
 
-                if (insertBlock) {
-                  await logseq.Editor.updateBlock(insertBlock.uuid, result);
-                }
+                  const imageUrl = await dallE_gptsToml(currentPrompt, openAISettings, size);
 
-                const imageUrl = await dallE_gptsToml(
-                  currentPrompt,
-                  openAISettings,
-                  size
-                );
+                  if ("url" in imageUrl) {
+                    try {
+                      const imageFileName = await saveDalleImage(imageUrl.url);
+                      processedImages.push(imageFileName);
+                      console.log(`第 ${i}/${n} 幅图片生成完成`);
 
-                if ("url" in imageUrl) {
-                  try {
-                    const imageFileName = await saveDalleImage(imageUrl.url);
-                    processedImages.push(imageFileName);
-                    console.log(`第 ${i}/${n} 幅图片生成完成`);
+                      result = `提示：\n\`\`\`json\n${JSON.stringify(promptObj, null, 2)}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
 
-                    // 更新结果，保留提示词
-                    result = `提示：\n\`\`\`json\n${jsonString}\n\`\`\`\n\n${processedImages.join(
-                      "\n"
-                    )}\n`;
-
-                    if (insertBlock) {
-                      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                      if (insertBlock) {
+                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                      }
+                    } catch (error) {
+                      console.error(`第 ${i} 幅图片保存失败:`, error);
+                      handleOpenAIError(error);
+                      result = result.replace(placeholder, "图片保存失败\n");
+                      if (insertBlock) {
+                        await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                      }
                     }
-                  } catch (error) {
-                    console.error(`第 ${i} 幅图片保存失败:`, error);
-                    result = result.replace(placeholder, "图片保存失败\n");
+                  } else {
+                    console.error(`第 ${i} 幅图片生成失败:`, imageUrl.error);
+                    handleOpenAIError(new Error(imageUrl.error));
+                    // 使用相同的占位符替换
+                    result = result.replace(placeholder, `第 ${i} 张图片生成失败\n`);
                     if (insertBlock) {
                       await logseq.Editor.updateBlock(insertBlock.uuid, result);
                     }
                   }
-                } else {
-                  console.error(`第 ${i} 幅图片生成失败:`, imageUrl.error);
+                } catch (imageError) {
+                  console.error(`图片处理错误:`, imageError);
+                  handleOpenAIError(imageError);
+                  // 确保在这里也能访问到 placeholder
+                  const placeholder = `正在生成第 ${i} 张图片，请稍后...\n`;
+                  result = result.replace(placeholder, `第 ${i} 张图片生成失败\n`);
+                  if (insertBlock) {
+                    await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                  }
                 }
               }
             } catch (parseError) {
               console.error("JSON 解析错误:", parseError);
-              await handleRegularTextResponse();
+              handleOpenAIError(new JSONParseError(
+                parseError instanceof Error ? parseError.message : "未知的 JSON 解析错误",
+                jsonString
+              ));
             }
           } else {
             await handleRegularTextResponse();
           }
         } catch (error) {
           console.error("onStop 执行错误:", error);
-          showMessage("Error processing response", "error");
+          handleOpenAIError(error);
         }
       };
 
@@ -582,9 +703,9 @@ export async function createRunGptsTomlCommand(command: Command) {
         onImagePrompt,
         onStop
       );
-    } catch (error: any) {
+    } catch (error) {
+      console.error("执行错误:", error);
       handleOpenAIError(error);
-      return;
     }
   };
 }

@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import "@logseq/libs";
 import { backOff } from "exponential-backoff";
 import { handleOpenAIError } from "./rawCommands";
+import { performanceOptimizer } from './performance';
 // import { showMessage } from "./logseq";
 // import {CompletionChoice} from "openai/resources/completions";
 // import { ChatCompletion, ChatCompletionChoice, CompletionChoice, Choice } from '../../../node_modules/.pnpm/openai@4.67.3/node_modules/openai/src/resources/chat/completions';
@@ -471,7 +472,7 @@ function trimLeadingWhitespace(text: string): string {
 
 // 1.异步处理：使用 async/await 语法使代码更洁、读。
 // 2.空值检查：增加了对 value 是否为 null 或 undefined 的检查，避免因空值导致的运行时错误。
-// 3.超时机制：增加了超时机制，防止长时间起，提高系统的健壮性和用户体验。
+// 3.超时机制：增加了超时机制，防止长时间，提高系统的健壮性和用户体验。
 // 4.统一错误提示：无论错误的具体因是什么，都提供一个统一的用户友好的错误提示信息。
 
 export async function openAIWithStreamGptsID(
@@ -558,7 +559,7 @@ export async function openAIWithStreamGptsID(
               reader.cancel();
               if (currentParagraph.trim()) {
                 console.log(
-                  "来自openAIWithStreamGptsID函数中的完整提示如下:",
+                  "来自openAIWithStreamGptsID函数中的完整提示词如下:",
                   currentParagraph
                 );
                 result += currentParagraph;
@@ -701,58 +702,26 @@ function checkAndExtractImagePrompt(
   hasRequest: boolean;
   prompt: string;
 } {
-  let hasRequest = false;
-  let prompt = "";
+  // 使用Set提升查找效率
+  const imageKeywordsSet = new Set(imageKeywords);
 
-  // 移除段落标记
+  // 缓存清理后的段落
   const cleanedParagraph = paragraph.replace(/^段落\d*\s*/, "").trim();
 
-  // 检查是否包含绘图需求标记
-  for (let keyword of imageKeywords) {
-    if (cleanedParagraph.includes(keyword)) {
-      hasRequest = true;
+  // 使用Map缓存已处理的提示词
+  if (!processedParagraphs.has(cleanedParagraph)) {
+    for (const keyword of imageKeywordsSet) {
+      if (cleanedParagraph.includes(keyword)) {
+        const prompt = cleanedParagraph
+          .substring(cleanedParagraph.indexOf(keyword))
+          .trim();
 
-      // 找到绘图需求的位置
-      const requestIndex = cleanedParagraph.indexOf(keyword);
-
-      // 分离故事背景和绘图需求
-      const storyBackground = cleanedParagraph
-        .substring(0, requestIndex)
-        .trim();
-      const drawingRequest = cleanedParagraph.substring(requestIndex).trim();
-
-      // 如果当前段落包含故事背景，直接使用
-      if (storyBackground) {
-        prompt = drawingRequest; // 只使用绘图需求部分作为提示词
-      } else {
-        // 如果当前段落没有故事背景，向前查找最近的非绘图需求段落
-        const paragraphs = paragraph.split(/\n\n|\n### /);
-        for (let i = paragraphs.length - 1; i >= 0; i--) {
-          const prevParagraph = paragraphs[i].trim();
-          if (
-            prevParagraph &&
-            !prevParagraph.includes("【绘图") &&
-            !prevParagraph.startsWith("段落")
-          ) {
-            prompt = drawingRequest; // 仍然只使用绘图需求部分
-            break;
-          }
+        if (!processedParagraphs.has(prompt) || isLastParagraph) {
+          processedParagraphs.add(prompt);
+          return { hasRequest: true, prompt };
         }
       }
-
-      // 如果没有找到有效的提示词，使用整个绘图需求
-      if (!prompt) {
-        prompt = drawingRequest;
-      }
-
-      break;
     }
-  }
-
-  if (hasRequest && (!processedParagraphs.has(prompt) || isLastParagraph)) {
-    processedParagraphs.add(prompt);
-    console.log("处理段落，生成提示词:", prompt); // 添加调试日志
-    return { hasRequest: true, prompt };
   }
 
   return { hasRequest: false, prompt: "" };
@@ -937,14 +906,43 @@ export async function dallE_gptsToml(
       ...openAiOptions,
     };
 
+    // 优化 API 端点选择
+    const baseURL = (() => {
+      if (options.chatCompletionEndpoint) {
+        // 确保移除尾部斜杠
+        const endpoint = options.chatCompletionEndpoint.replace(/\/$/, "");
+        // 验证端点是否有效
+        try {
+          new URL(endpoint);
+          return endpoint;
+        } catch {
+          console.warn(
+            "Invalid endpoint URL, falling back to default endpoint"
+          );
+          // 使用配置中的默认端点
+          return (
+            options.chatCompletionEndpoint || "https://api.shubiaobiao.cn/v1"
+          );
+        }
+      }
+      // 使用配置中的默认端点
+      return options.chatCompletionEndpoint || "https://api.shubiaobiao.cn/v1";
+    })();
+
     const openai = new OpenAI({
       apiKey: options.apiKey,
-      baseURL: options.chatCompletionEndpoint,
+      baseURL,
       dangerouslyAllowBrowser: true,
+      timeout: 60000, // 设置60秒超时
     });
 
     // 定义有效的尺寸类型
-    type ValidSize = "256x256" | "512x512" | "1024x1024" | "1024x1792" | "1792x1024";
+    type ValidSize =
+      | "256x256"
+      | "512x512"
+      | "1024x1024"
+      | "1024x1792"
+      | "1792x1024";
 
     // 改进尺寸处理逻辑
     const imageSizeRequest = (() => {
@@ -962,9 +960,11 @@ export async function dallE_gptsToml(
           "512x512",
           "1024x1024",
           "1024x1792",
-          "1792x1024"
+          "1792x1024",
         ];
-        return (validSizes.includes(sizeStr as ValidSize) ? sizeStr : "1024x1024") as ValidSize;
+        return (
+          validSizes.includes(sizeStr as ValidSize) ? sizeStr : "1024x1024"
+        ) as ValidSize;
       }
 
       // 处理单个数字的情况
@@ -976,7 +976,7 @@ export async function dallE_gptsToml(
           { threshold: 1024, size: "1024x1024" },
           { threshold: 1408, size: "1024x1024" }, // 1024~1408 返回 1024x1024
           { threshold: 1792, size: "1792x1024" }, // 1408~1792 返回 1792x1024
-          { threshold: Infinity, size: "1024x1024" } // 超过1792返回1024x1024
+          { threshold: Infinity, size: "1024x1024" }, // 超过1792返回1024x1024
         ] as const;
 
         const result = sizeThresholds.find(({ threshold }) => num <= threshold);
@@ -995,43 +995,87 @@ export async function dallE_gptsToml(
       style: options.dalleStyle,
     };
 
-    const response = await backOff(
-      async () => {
+    // 实现渐进式重试策略
+    const retryWithTimeout = async (attempt: number = 1): Promise<OpenAI.ImagesResponse> => {
+      const timeout = Math.min(30000 + (attempt - 1) * 10000, 60000);
+      
+      try {
+        // 创建定时器和Promise
+        let rejectTimeout: (reason?: any) => void;
+        const timer = performanceOptimizer.createOptimizedTimer(
+          () => {
+            if (rejectTimeout) {
+              rejectTimeout(new Error(`请求超时(${timeout/1000}秒)，正在重试...`));
+            }
+          },
+          timeout
+        );
+
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          rejectTimeout = reject;
+          timer.start();
+        });
+
         try {
-          const result = await openai.images.generate(imageParameters);
-          return result;
-        } catch (error: any) {
-          console.error("DALL-E API Error:", {
-            status: error.status,
-            message: error.message,
-            response: error.response?.data,
-          });
-          
-          if (error.response?.status === 401) {
-            throw new Error("API 密钥无效或未正确配置。请检查您的 API 密钥设置。");
+          const generatePromise = backOff(
+            () => openai.images.generate(imageParameters),
+            {
+              ...retryOptions,
+              numOfAttempts: 3,
+              startingDelay: 1000,
+              timeMultiple: 2,
+              retry: (error: any, attemptNumber: number) => {
+                console.log(`第 ${attemptNumber} 次重试，原因:`, error);
+                return retryOptions.retry(error);
+              },
+            }
+          );
+
+          const response = (await Promise.race([
+            generatePromise,
+            timeoutPromise,
+          ])) as OpenAI.ImagesResponse;
+
+          if (!response?.data?.[0]?.url) {
+            throw new Error("No image URL in response");
           }
+
+          timer.stop(); // 成功后清理定时器
+          return response;
+        } catch (error) {
+          timer.stop(); // 错误时也要清理定时器
           throw error;
         }
-      },
-      {
-        ...retryOptions,
-        retry: (error: any, attemptNumber: number) => {
-          console.log(`Retry attempt ${attemptNumber} due to:`, error);
-          return retryOptions.retry(error);
-        },
+      } catch (error: any) {
+        if (attempt < 3 && error.message.includes('超时')) {
+          console.log(`第 ${attempt} 次尝试超时，准备重试...`);
+          return retryWithTimeout(attempt + 1);
+        }
+        throw error;
       }
-    );
+    };
 
-    // 添加 URL 检查
-    const imageUrl = response.data[0]?.url;
-    if (!imageUrl) {
-      throw new Error("No image URL in response");
+    try {
+      const response = await retryWithTimeout();
+      // 修复类型错误：确保 url 存在
+      const imageUrl = response?.data?.[0]?.url;
+      if (!imageUrl) {
+        throw new Error("No valid image URL in response");
+      }
+      return { url: imageUrl };
+    } catch (error: any) {
+      if (error.message.includes("超时")) {
+        return { error: "多次请求超时，请检查网络连接或稍后重试" };
+      }
+      throw error;
     }
-
-    return { url: imageUrl };
   } catch (error: any) {
-    const result = handleOpenAIError(error);
-    return { error: result.error };
+    console.error("DALL-E image generation error:", error);
+    const errorMessage =
+      error.response?.data?.error?.message || error.message || String(error);
+    return { error: errorMessage };
+  } finally {
+    processedParagraphs.clear();
   }
 }
 

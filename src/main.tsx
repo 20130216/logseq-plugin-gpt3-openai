@@ -10,11 +10,19 @@ import { createRunGptsTomlCommand, handleOpenAIError, runDalleBlock, runGptBlock
 import { BlockEntity, IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { useImmer } from 'use-immer';
 import { showMessage } from './lib/logseq';
+import { appOptimizer } from './lib/optimizers';
 
 logseq.useSettingsSchema(settingsSchema);
 
 // 主入口函数
 async function main() {
+  // 初始化所有优化器
+  appOptimizer.initialize();
+  
+  // 为主要容器添加优化
+  const appContainer = document.getElementById('app');
+  appOptimizer.setupContainer(appContainer);
+
   const root = ReactDOM.createRoot(document.getElementById("app")!);
   root.render(
     <React.StrictMode>
@@ -217,7 +225,7 @@ const LogseqApp = () => {
       commandName: "提示词教授（对话人次100k+）", 
       gptsID: "gpt-4-gizmo-g-qfoOICq1l" 
     },
-    //提示词工程师：生成卓越的 ChatGPT 提示或改进您现有的提示。通过学习和应用��提示实践，成为一名专业的提示工程师。      
+    //提示词工程师：生成卓越的 ChatGPT 提示或改进您现有的提示。通过学习和应用提示实践，成为一名专业的提示工程师。      
     //prompt-engineer     评级1k+ 4.3分，类别 Productivity生产力，对话200k+， 2024.10.28                                  
     { 
       commandName: "提示词工程师（对话人次200k+）", 
@@ -359,7 +367,7 @@ const LogseqApp = () => {
     //微信朋友圈写手：擅长撰写微信朋友圈
     //wei-xin-peng-you-quan-xie-shou 评级10+ 3.5分,无类别，对话1k+， 2024.10.28
     { 
-      commandName: "���信朋友圈写���", 
+      commandName: "微信朋友圈写手", 
       gptsID: "gpt-4-gizmo-g-xJCEKei5d" 
     }, 
 
@@ -371,7 +379,7 @@ const LogseqApp = () => {
       commandName: "知乎回答大师（对话人次1k+）", 
       gptsID: "gpt-4-gizmo-g-WcyReiblz" 
     },     
-    // 知乎文案专家：这是大全编写的一名资深的知乎文案专家，专长于创作引人入胜且专业的各种内容，包括问题或者任何文章，并自动配图三张。欢���关注我的公众号"大全Prompter"领取更多好玩的 GPTs 小应用。使用教程：https://t.zsxq.com/2b5jM；GPTs合集 https://t.zsxq.com/18jTBeB8a（公众号: "大全Prompter"）
+    // 知乎文案专家：这是大全编写的一名资深的知乎文案专家，专长于创作引人入胜且专业的各种内容，包括问题或者任何文章，并自动配图三张。欢关注我的公众号"大全Prompter"领取更多好玩的 GPTs 小应用。使用教程：https://t.zsxq.com/2b5jM；GPTs合集 https://t.zsxq.com/18jTBeB8a（公众号: "大全Prompter"）
     // zhi-hu-wen-an-zhuan-jia-gong-zhong-hao-bao-wen 100+评比4.7分,类别 Writing （写作，对话5k+， 2024.10.28
     { 
       commandName: "知乎文案专家（评分高，对话人次5k+）", 
@@ -504,25 +512,25 @@ const LogseqApp = () => {
     //Humanize AI人性化 AI 前 1 名 AI 人性化工具可帮助您获得类似人类的内容。使用可用的免费积分使您的 AI 生成的内容人性化。
     //humanize-ai 10k+评级4.1分，类别 Writing写作，对话1M+， 2024.10.28
     { 
-      commandName: "人性化 AI（”写作“排名第三）", 
+      commandName: "人性化AI (写作排名第三)", 
       gptsID: "gpt-4-gizmo-g-a6Fpz8NRb" 
     }, 
     //AI Humanizer AI 人性化 #1 世界上🏆的 AI人性化者：在几秒钟内获得类似人类的内容。这个 GPT 通过可用的免费积分使 AI 生成的文本人性化，同时保持内容的含义和质量。
     //ai-humanizer Gpts排名第二，50k+评分3.9，对话3M+， 2024.10.28
     { 
-      commandName: "AI 人性化 （”写作“排名第二）", 
+      commandName: "AI人性化 (写作排名第二)", 
       gptsID: "gpt-4-gizmo-g-2azCVmXdy" 
     },
     //Write For Me为我写 编写量身定制的、引人入胜的内容，重点关注质量、相关性和精确的字数。
     //write-for-me Gpts排名第一，5个月对话5M+， 2024.10.28
     { 
-      commandName: "writeForMe（”写作“排名第一）", 
+      commandName: "writeForMe (写作排名第一)", 
       gptsID: "gpt-4-gizmo-g-B3hgivKK9" 
     },    
     //Write Anything（写任何东西）The world's most powerful writing tool.世界上最强大的书写工具。
     //write-anything 25k+评级4.2分，类别 Writing写作，对话1M+， 2024.10.28
     { 
-      commandName: "Write Anything“（”写作“力荐：常规模式；学术模式；创造模式）", 
+      commandName: "Write Anything (写作力荐-常规模式/学术模式/创造模式)", 
       gptsID: "gpt-4-gizmo-g-odWlfAKWM" 
     }, 
 
@@ -531,19 +539,19 @@ const LogseqApp = () => {
     // 文案改写 改写各类自媒体公众号、知乎、百家号文章、段落
     // wen-an-gai-xie 60+评比4.2分,类别 Writing （写作，对话5k+， 2024.10.28
     { 
-      commandName: "文案改写（”写作“ 对话人次5k+）", 
+      commandName: "文案改写 (写作-对话人次5k+)", 
       gptsID: "gpt-4-gizmo-g-LEjXLGa0o" 
     },   
     // 文章改写 专业且口语化的文章改写专家
     // wen-zhang-gai-xie 100+评比4.3分,类别 Writing （写作，对话10k+， 2024.10.28
     { 
-      commandName: "文章改写（”写作“ 对话人次10k+）", 
+      commandName: "文章改写 (写作-对话人次10k+)", 
       gptsID: "gpt-4-gizmo-g-8MKokXMpN" 
     },     
     //Improve My Writing提高我的写作水平 在保留意义和本质的同时改进您的写作。轻松提升清晰度和风格！
     //improve-my-writing 50+评比4.4分,类别 Writing （写作，对话5k+， 2024.10.28
     { 
-      commandName: "文章润色（”写作“ 对话人次10k+）", 
+      commandName: "文章润色 (写作-对话人次10k+)", 
       gptsID: "gpt-4-gizmo-g-QGedJoJpD" 
     },      
 

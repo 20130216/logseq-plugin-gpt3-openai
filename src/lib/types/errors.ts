@@ -15,4 +15,20 @@ export interface ContentModerationError {
   type: ContentModerationErrorType;
   message: string;
   words?: string[];
+}
+
+export interface PromptData {
+  prompt?: string;
+  text?: string;
+  description?: string;
+  size?: string;
+  n?: number | string;
+  count?: number | string;
+}
+
+export class JSONParseError extends Error {
+  constructor(message: string, public jsonString?: string) {
+    super(message);
+    this.name = 'JSONParseError';
+  }
 } 

@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
-import { Combobox, Dialog } from "@headlessui/react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Combobox } from "@headlessui/react";
 import { CommandOptions } from "./components/CommandOption";
 import { CommandResult } from "./components/CommandResult";
 import { CommandQuery } from "./lib/CommandQuery";
@@ -42,13 +42,10 @@ interface LogseqAIProps {
   onClose: () => void;
 }
 
-export const LogseqAI = ({
-  commands,
-  handleCommand,
-  onClose,
-  onInsert,
-  onReplace,
-}: LogseqAIProps) => {
+export const LogseqAI: React.FC<LogseqAIProps> = ({ commands, handleCommand, onClose, onInsert, onReplace }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const [commandState, setCommandState] = useState<CommandState>({
     status: "ready",
   });
@@ -103,6 +100,54 @@ export const LogseqAI = ({
       document.removeEventListener("keydown", handleKeyPress);
     };
   }, [handleKeyPress]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const focusableElements = container.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    const handleTabKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+
+      if (e.shiftKey) {
+        if (document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleTabKey);
+    firstElement?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', handleTabKey);
+    };
+  }, []);
+
+  useEffect(() => {
+    searchInputRef.current?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   let result;
   if (commandState.status === "ready") {
@@ -171,33 +216,38 @@ export const LogseqAI = ({
   }
 
   return (
-    <Dialog
-      open={true}
-      onClose={() => {
-        onClose();
-        reset();
-      }}
-      className="fixed top-1/2 inset-0 z-50 overflow-y-auto"
+    <div 
+      ref={containerRef}
+      className="logseq-ai-container"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="logseq-ai-title"
     >
-      <Dialog.Panel className="bg-accent-dark max-w-2xl mx-auto rounded-lg shadow-2xl relative flex flex-col p-4">
-        <Combobox as="div" onChange={runCommand}>
-          <div className="flex items-center text-lg font-medium border-b border-slate-500">
-            <Combobox.Input
-              id="logseq-openai-search"
-              autoFocus={true}
-              className="p-5 text-white placeholder-gray-200 w-full bg-transparent border-0 outline-none"
-              placeholder="Type a command or search for template..."
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setCommandState({ status: "ready" });
-              }}
-              displayValue={() => query}
-              value={query}
-            />
-          </div>
-          {result}
-        </Combobox>
-      </Dialog.Panel>
-    </Dialog>
+      <div className="search-container">
+        <input
+          ref={searchInputRef}
+          type="text"
+          id="logseq-openai-search"
+          placeholder="Search commands..."
+          className="search-input"
+          tabIndex={0}
+          aria-label="Search commands"
+        />
+      </div>
+
+      <Combobox as="div" onChange={runCommand}>
+        {result}
+      </Combobox>
+
+      <div className="button-container" role="group" aria-label="Action buttons">
+        <button
+          onClick={onClose}
+          className="cancel-button"
+          tabIndex={0}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 };

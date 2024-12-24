@@ -202,3 +202,25 @@ function validateAndFixToml(filePath) {
 // 使用相对路径
 const filePath = './src/prompts/prompts-gpts.toml';
 validateAndFixToml(filePath);
+
+// 添加新的验证函数
+export function validatePromptData(data) {
+  // 检查是否至少有一个文本字段
+  const hasText = data.prompt || data.text || data.description;
+  if (!hasText) {
+    throw new Error('必须提供提示词 (prompt/text/description)');
+  }
+
+  // 验证尺寸格式
+  if (data.size && !/^\d+x\d+$/.test(data.size)) {
+    throw new Error('尺寸格式无效，应为 "widthxheight"');
+  }
+
+  // 验证图片数量
+  const count = parseInt(String(data.n || data.count || 1));
+  if (isNaN(count) || count < 1 || count > 10) {
+    throw new Error('图片数量应在 1-10 之间');
+  }
+
+  return true;
+}

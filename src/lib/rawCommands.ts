@@ -459,59 +459,72 @@ export async function createRunGptsTomlCommand(command: Command) {
       const onImagePrompt = async (imagePrompt: string) => {
         if (isParseJson) return;
 
-        // 生成唯一的占位符 ID，但在显示时隐藏
+        if (pendingImagePrompts.has(imagePrompt)) {
+          return;
+        }
+
         const placeholderId = Date.now();
-        const visiblePlaceholder = "为该段落绘图中，请稍后...\n";
-        const uniquePlaceholder = `为该段落绘图中，请稍后...(${placeholderId})\n`;
+        const visiblePlaceholder = "为该段落绘图中，请稍后...";
+        const uniquePlaceholder = `为该段落绘图中，请稍后...(${placeholderId})`;
         pendingImagePrompts.set(imagePrompt, uniquePlaceholder);
 
-        // 显示给用户看的是没有 ID 的占位符
-        result += visiblePlaceholder;
-        if (insertBlock) {
-          await logseq.Editor.updateBlock(insertBlock.uuid, result);
-        }
-
-        const maxPromptLength = 1000;
-        let truncatedPrompt = imagePrompt;
-        if (imagePrompt.length > maxPromptLength) {
-          truncatedPrompt = imagePrompt.substring(0, maxPromptLength);
-          console.warn(
-            `Prompt length truncated to ${maxPromptLength} characters.`
-          );
-        }
-
-        // 添加当前绘制场景的日志
-        console.log(`当前指令：${imagePrompt}`);
-
-        const imageResponse = await dallE_gptsToml(
-          truncatedPrompt,
-          openAISettings,
-          imageSize
-        );
-
-        if ("url" in imageResponse) {
-          try {
-            const imageFileName = await saveDalleImage(imageResponse.url);
-            // 使用带 ID 的占位符进行替换，但用户看不到 ID
-            result = result.replace(visiblePlaceholder, `${imageFileName}\n`);
-            if (insertBlock) {
-              await logseq.Editor.updateBlock(insertBlock.uuid, result);
-            }
-          } catch (error) {
-            console.error("Failed to save image:", error);
-            result = result.replace(visiblePlaceholder, "图片保存失败\n");
-            if (insertBlock) {
-              await logseq.Editor.updateBlock(insertBlock.uuid, result);
-            }
-          }
-        } else {
-          console.error("Failed to generate image:", imageResponse.error);
-          result = result.replace(visiblePlaceholder, "图片生成失败\n");
+        if (!result.includes(visiblePlaceholder)) {
+          result += `\n${visiblePlaceholder}`;
           if (insertBlock) {
             await logseq.Editor.updateBlock(insertBlock.uuid, result);
           }
         }
-        pendingImagePrompts.delete(imagePrompt);
+
+        try {
+          const maxPromptLength = 1000;
+          let truncatedPrompt = imagePrompt;
+          if (imagePrompt.length > maxPromptLength) {
+            truncatedPrompt = imagePrompt.substring(0, maxPromptLength);
+            console.warn(
+              `Prompt length truncated to ${maxPromptLength} characters.`
+            );
+          }
+
+          console.log(`当前指令：${imagePrompt}`);
+
+          const imageResponse = await dallE_gptsToml(
+            truncatedPrompt,
+            openAISettings,
+            imageSize
+          );
+
+          if ("url" in imageResponse) {
+            try {
+              const imageFileName = await saveDalleImage(imageResponse.url);
+              const imageMarkdown = `\n${imageFileName}\n`;
+              result = result.replace(`\n${visiblePlaceholder}`, imageMarkdown);
+              if (insertBlock) {
+                await logseq.Editor.updateBlock(insertBlock.uuid, result);
+              }
+            } catch (error) {
+              console.error("Failed to save image:", error);
+              result = result.replace(
+                `\n${visiblePlaceholder}`,
+                "\n图片保存失败\n"
+              );
+              if (insertBlock) {
+                await logseq.Editor.updateBlock(insertBlock.uuid, result);
+              }
+            }
+          }
+        } catch (error: any) {
+          console.error("Failed to generate image:", error);
+          const errorMessage = error.message?.includes("429")
+            ? "\n服务器繁忙，请稍后重试 (错误代码: 429)\n"
+            : "\n图片生成失败\n";
+
+          result = result.replace(`\n${visiblePlaceholder}`, errorMessage);
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+        } finally {
+          pendingImagePrompts.delete(imagePrompt);
+        }
       };
 
       const onStop = async () => {
@@ -811,12 +824,12 @@ async function processImagesSequentially(
   // 按顺序处理结果
   for (const result of results.sort((a, b) => a.index - b.index)) {
     if (result.success && result.fileName) {
-      processedImages[result.index] = result.fileName;
+      processedImages[result.index] = `${result.fileName}`;
       // 按顺序更新显示
       const validImages = processedImages.filter(
         (img): img is string => img !== null
       );
-      const updatedResult = `${currentResult}\n${validImages.join("\n")}`;
+      const updatedResult = `${currentResult}\n${validImages.join("")}`;
       if (insertBlock) {
         await logseq.Editor.updateBlock(insertBlock.uuid, updatedResult);
       }
@@ -824,7 +837,7 @@ async function processImagesSequentially(
         `第 ${result.index + 1}/${imagePrompts.length} 幅图片插入完成\n`
       );
     } else {
-      const errorMessage = `第 ${result.index + 1} 张图片生成失败`;
+      const errorMessage = `第 ${result.index + 1} 张图片生成失败\n`;
       processedImages[result.index] = errorMessage;
       handleOpenAIError(new Error(result.error || errorMessage));
     }

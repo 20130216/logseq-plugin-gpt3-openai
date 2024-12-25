@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import "@logseq/libs";
 import { backOff } from "exponential-backoff";
 import { handleOpenAIError } from "./rawCommands";
-import { performanceOptimizer } from './performance';
+import { performanceOptimizer } from "./performance";
 // import { showMessage } from "./logseq";
 // import {CompletionChoice} from "openai/resources/completions";
 // import { ChatCompletion, ChatCompletionChoice, CompletionChoice, Choice } from '../../../node_modules/.pnpm/openai@4.67.3/node_modules/openai/src/resources/chat/completions';
@@ -996,20 +996,21 @@ export async function dallE_gptsToml(
     };
 
     // 实现渐进式重试策略
-    const retryWithTimeout = async (attempt: number = 1): Promise<OpenAI.ImagesResponse> => {
+    const retryWithTimeout = async (
+      attempt: number = 1
+    ): Promise<OpenAI.ImagesResponse> => {
       const timeout = Math.min(30000 + (attempt - 1) * 10000, 60000);
-      
+
       try {
         // 创建定时器和Promise
         let rejectTimeout: (reason?: any) => void;
-        const timer = performanceOptimizer.createOptimizedTimer(
-          () => {
-            if (rejectTimeout) {
-              rejectTimeout(new Error(`请求超时(${timeout/1000}秒)，正在重试...`));
-            }
-          },
-          timeout
-        );
+        const timer = performanceOptimizer.createOptimizedTimer(() => {
+          if (rejectTimeout) {
+            rejectTimeout(
+              new Error(`请求超时(${timeout / 1000}秒)，正在重试...`)
+            );
+          }
+        }, timeout);
 
         const timeoutPromise = new Promise<never>((_, reject) => {
           rejectTimeout = reject;
@@ -1047,7 +1048,7 @@ export async function dallE_gptsToml(
           throw error;
         }
       } catch (error: any) {
-        if (attempt < 3 && error.message.includes('超时')) {
+        if (attempt < 3 && error.message.includes("超时")) {
           console.log(`第 ${attempt} 次尝试超时，准备重试...`);
           return retryWithTimeout(attempt + 1);
         }

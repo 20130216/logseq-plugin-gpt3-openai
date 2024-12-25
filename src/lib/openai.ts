@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import "@logseq/libs";
 import { backOff } from "exponential-backoff";
-import { handleOpenAIError } from "./rawCommands";
+import { handleOpenAIError } from "./types/errors";
 import { performanceOptimizer } from "./performance";
 // import { showMessage } from "./logseq";
 // import {CompletionChoice} from "openai/resources/completions";

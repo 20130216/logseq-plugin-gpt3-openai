@@ -2,7 +2,7 @@ import { Command } from "../ui/LogseqAI";
 import toml from "toml";
 import prompts from "../prompts/prompts.toml?raw";
 import promptsGpts from "../prompts/prompts-gpts.toml?raw";
-import { handleOpenAIError } from "./rawCommands";
+import { handleOpenAIError } from "./types/errors";
 
 //extract content from inside ```gpt-prompt codeblock
 function extractCodeblock(content: string) {

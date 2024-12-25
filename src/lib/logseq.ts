@@ -1,6 +1,6 @@
 import { BlockEntity, BlockUUIDTuple } from "@logseq/libs/dist/LSPlugin.user";
 import { getOpenaiSettings } from "./settings";
-import { handleOpenAIError } from "./rawCommands";
+import { handleOpenAIError } from "./types/errors";
 
 function isBlockEntity(b: BlockEntity | BlockUUIDTuple): b is BlockEntity {
   return (b as BlockEntity).uuid !== undefined;

@@ -6,7 +6,8 @@ import ReactDOM from "react-dom/client";
 import { Command, LogseqAI } from "./ui/LogseqAI";
 import { loadUserCommands, loadBuiltInCommands, loadBuiltInGptsTomlCommands } from "./lib/prompts";
 import { getOpenaiSettings, settingsSchema } from "./lib/settings";
-import { createRunGptsTomlCommand, handleOpenAIError, runDalleBlock, runGptBlock, runGptPage, runGptsID, runWhisper } from "./lib/rawCommands";
+import { createRunGptsTomlCommand, runDalleBlock, runGptBlock, runGptPage, runGptsID, runWhisper } from "./lib/rawCommands";
+import { handleOpenAIError } from "./lib/types/errors";
 import { BlockEntity, IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { useImmer } from 'use-immer';
 import { showMessage } from './lib/logseq';
@@ -704,5 +705,6 @@ registerGptsIDCommands();
     />
   );
 };
+
 
 

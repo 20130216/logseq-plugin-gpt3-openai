@@ -259,18 +259,179 @@ function parseImageSizeFromPrompt(prompt: string): string | null {
   return match ? match[0] : null;
 }
 
-// 增函数2 for gpts-toml
+// 处理 JSON 解析流程的函数
+async function handleColoringBookHero2(
+  jsonString: string,
+  insertBlock: any,
+  result: string,
+  openAISettings: OpenAIOptions
+) {
+  try {
+    // 清理 JSON 字符串中的特殊字符
+    jsonString = jsonString
+      .replace(/[\x00-\x1F\x7F-\x9F]/g, "")
+      .replace(/[\r\n\t]/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/\\"/g, '"')
+      .replace(/"{2,}/g, '"')
+      .replace(/"\\?"([^"]+)\\?""\s*:/g, '"$1":')
+      .trim();
+
+    // 确保是有效的 JSON 对象格式
+    if (!jsonString.startsWith("{")) {
+      jsonString = "{" + jsonString;
+    }
+    if (!jsonString.endsWith("}")) {
+      jsonString = jsonString + "}";
+    }
+
+    // 尝试解析 JSON
+    let jsonData = await parseAndValidateJSON(jsonString);
+
+    // 提取和验证必要的属性
+    const promptText = jsonData.prompt?.toString().trim() || 
+                      jsonData.text?.toString().trim() || 
+                      jsonData.description?.toString().trim();
+
+    if (!promptText) {
+      throw new JSONParseError("提示词不能为空", jsonString);
+    }
+
+    // 构建标准化的对象
+    const promptObj = {
+      prompt: promptText,
+      size: (jsonData.size?.toString() || "1024x1024").trim(),
+      n: Math.min(Math.max(1, parseInt(String(jsonData.n || 1), 10)), 10)
+    };
+
+    const { prompt: finalPromptText, size, n } = promptObj;
+    console.log(`计划生成 ${n} 幅图片`);
+
+    // 显示初始 JSON 文档
+    result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n\n准备生成 ${n} 幅图片...\n`;
+    if (insertBlock) {
+      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+    }
+
+    // 构建所有图片的提示词
+    const imagePrompts = buildImagePrompts(finalPromptText, size, n);
+
+    // 初始显示 JSON 文档
+    result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n`;
+    if (insertBlock) {
+      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+    }
+
+    // 处理图片并更新结果
+    const processedImages = await processImagesSequentially(imagePrompts, openAISettings, insertBlock, result);
+    
+    result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
+    if (insertBlock) {
+      await logseq.Editor.updateBlock(insertBlock.uuid, result);
+    }
+
+    return result;
+  } catch (parseError) {
+    console.error("JSON 解析错误:", parseError);
+    throw new JSONParseError(
+      parseError instanceof Error ? parseError.message : "未知的 JSON 解析错误",
+      jsonString
+    );
+  }
+}
+
+// 处理普通图片生成流程的函数
+async function handleColoringBookHero(
+  finalPrompt: string,
+  openAISettings: OpenAIOptions,
+  onContent: (content: string) => void,
+  onImagePrompt: (imagePrompt: string) => void,
+  onStop: () => void
+): Promise<string> {
+  const result = await openAIWithStreamGptsToml(
+    finalPrompt,
+    openAISettings,
+    onContent,
+    onImagePrompt,
+    onStop
+  );
+  
+  // 确保返回字符串类型
+  if (typeof result === 'string') {
+    return result;
+  } else if (result && 'error' in result) {
+    throw new Error(result.error);
+  }
+  return '';
+}
+
+// JSON 解析和验证的辅助函数
+async function parseAndValidateJSON(jsonString: string): Promise<any> {
+  try {
+    return JSON.parse(jsonString);
+  } catch (firstError) {
+    try {
+      // 如果第一次解析失败，尝试进一步修复
+      jsonString = jsonString
+        .replace(/([{,]\s*)([^"{\s][^:]*?):/g, '$1"$2":')
+        .replace(/:\s*([^",{\[\s][^,}\]]*)/g, ':"$1"')
+        .replace(/,\s*([}\]])/g, "$1")
+        .replace(/"([^"]*)""/g, '"$1"');
+
+      console.debug("修复后的 JSON 字符串:", jsonString);
+      return JSON.parse(jsonString);
+    } catch (secondError) {
+      console.error("JSON 解析详情:", {
+        originalString: jsonString,
+        firstError,
+        secondError,
+        cleanedString: jsonString,
+      });
+
+      const errorMessage = secondError instanceof Error 
+        ? secondError.message 
+        : "未知的 JSON 格式错误";
+
+      throw new JSONParseError(`JSON 格式错误: ${errorMessage}`, jsonString);
+    }
+  }
+}
+
+// 构建图片提示词的辅助函数
+function buildImagePrompts(finalPromptText: string, size: string, n: number) {
+  return Array.from({ length: n }, (_, i) => {
+    const sceneIndex = i + 1;
+    const fullPrompt = `${finalPromptText}当前指令：绘制第${sceneIndex}幅场景`;
+
+    console.log(
+      `\n准备第${sceneIndex}幅场景的提示词：\n`,
+      JSON.stringify(
+        {
+          prompt: fullPrompt,
+          size,
+          n: 1,
+        },
+        null,
+        2
+      )
+    );
+
+    return {
+      prompt: fullPrompt,
+      size,
+    };
+  });
+}
+
+// 主函数重构后的版本
 export async function createRunGptsTomlCommand(command: Command) {
   return async (b: IHookEvent) => {
     try {
-      // 获取预加载的设置
-      const openAISettings = await ResourceOptimizer.getResource(
-        "openai-settings"
-      );
-
-      // 仍然需要验证，以防设置发生变化
+      // 获取和验证设置
+      const openAISettings = await ResourceOptimizer.getResource("openai-settings");
       await validateSettings(openAISettings);
 
+      // 获取和验证当前块
       const currentBlock = await logseq.Editor.getBlock(b.uuid);
       if (!currentBlock) {
         throw new Error("No current block");
@@ -282,7 +443,7 @@ export async function createRunGptsTomlCommand(command: Command) {
         return;
       }
 
-      // 修改内容检查的处理方式
+      // 内容验证
       try {
         await validateContent(currentBlock.content);
       } catch (error: any) {
@@ -292,15 +453,13 @@ export async function createRunGptsTomlCommand(command: Command) {
             message = message.split("----")[0].trim();
           }
           showMessage(message, error.level === "extreme" ? "error" : "warning");
-          return; // 始终中断响应
+          return;
         }
         throw error;
       }
 
-      // 只有内容检查通过才继续执行
+      // 初始化结果
       let result = "";
-      let pendingImagePrompts = new Map<string, string>();
-
       const insertBlock = await logseq.Editor.insertBlock(
         currentBlock.uuid,
         result,
@@ -312,307 +471,84 @@ export async function createRunGptsTomlCommand(command: Command) {
       const finalPrompt = command.prompt + currentBlock.content;
       const imageSize = parseImageSizeFromPrompt(finalPrompt) || "1024x1024";
 
-      // 收集完整响应
-      let fullResponse = "";
-
-      const onContent = async (content: string) => {
-        result += content;
-        fullResponse += content;
-        if (insertBlock) {
-          await logseq.Editor.updateBlock(insertBlock.uuid, result);
-        }
-      };
-
-      // 新增判断：是否需要解析 JSON 文本
-      const isParseJson = command.isParseJson;
-
-      const onImagePrompt = async (imagePrompt: string) => {
-        if (isParseJson) return;
-
-        if (pendingImagePrompts.has(imagePrompt)) {
-          return;
-        }
-
-        const placeholderId = Date.now();
-        const visiblePlaceholder = "为该段落绘图中，请稍后...";
-        const uniquePlaceholder = `为该段落绘图中，请稍后...(${placeholderId})`;
-        pendingImagePrompts.set(imagePrompt, uniquePlaceholder);
-
-        if (!result.includes(visiblePlaceholder)) {
-          result += `\n${visiblePlaceholder}`;
-          if (insertBlock) {
-            await logseq.Editor.updateBlock(insertBlock.uuid, result);
-          }
-        }
-
-        try {
-          const maxPromptLength = 1000;
-          let truncatedPrompt = imagePrompt;
-          if (imagePrompt.length > maxPromptLength) {
-            truncatedPrompt = imagePrompt.substring(0, maxPromptLength);
-            console.warn(
-              `Prompt length truncated to ${maxPromptLength} characters.`
-            );
-          }
-
-          console.log(`当前指令：${imagePrompt}`);
-
-          const imageResponse = await dallE_gptsToml(
-            truncatedPrompt,
-            openAISettings,
-            imageSize
-          );
-
-          if ("url" in imageResponse) {
-            try {
-              const imageFileName = await saveDalleImage(imageResponse.url);
-              const imageMarkdown = `\n${imageFileName}\n`;
-              result = result.replace(`\n${visiblePlaceholder}`, imageMarkdown);
-              if (insertBlock) {
-                await logseq.Editor.updateBlock(insertBlock.uuid, result);
-              }
-            } catch (error) {
-              console.error("图片保存失败，详细错误：", error);
-              const errorResult = handleOpenAIError(error);
-              result = result.replace(`\n${visiblePlaceholder}`, errorResult.error);
-              if (insertBlock) {
-                await logseq.Editor.updateBlock(insertBlock.uuid, result);
-              }
+      // 根据命令类型选择处理流程
+      if (command.isParseJson) {
+        // 处理 JSON 解析流程
+        let fullResponse = "";
+        await openAIWithStreamGptsToml(
+          finalPrompt,
+          openAISettings,
+          async (content: string) => {
+            result += content;
+            fullResponse += content;
+            if (insertBlock) {
+              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+            }
+          },
+          () => {},
+          async () => {
+            const jsonMatch = fullResponse.match(/```json\s*([\s\S]*?)```/);
+            if (jsonMatch) {
+              result = await handleColoringBookHero2(
+                jsonMatch[1].trim(),
+                insertBlock,
+                result,
+                openAISettings
+              );
             }
           }
-        } catch (error: any) {
-          console.error("图片生成失败，详细错误：", error);
-          const errorResult = handleOpenAIError(error);
-          result = result.replace(`\n${visiblePlaceholder}`, errorResult.error);
-          if (insertBlock) {
-            await logseq.Editor.updateBlock(insertBlock.uuid, result);
-          }
-        } finally {
-          pendingImagePrompts.delete(imagePrompt);
-        }
-      };
-
-      const onStop = async () => {
-        console.log("Processing completed.");
-        try {
-          if (!result) {
-            await openAIWithStreamGptsToml(
-              finalPrompt,
-              openAISettings,
-              onContent,
-              onImagePrompt,
-              onStop
-            );
-            return;
-          }
-
-          const jsonMatch = fullResponse.match(/```json\s*([\s\S]*?)```/);
-          if (jsonMatch && isParseJson) {
-            let jsonString = jsonMatch[1].trim();
-            console.log("原始完整提示词:", jsonString);
-
-            try {
-              // 清理 JSON 字符串中的特殊字符
-              jsonString = jsonString
-                // 移除不可见字符
-                .replace(/[\x00-\x1F\x7F-\x9F]/g, "")
-                // 处理换行符和制表符
-                .replace(/[\r\n\t]/g, " ")
-                // 处理多余的空格
-                .replace(/\s+/g, " ")
-                // 处理错误的转义引号
-                .replace(/\\"/g, '"')
-                // 处理多余的引号
-                .replace(/"{2,}/g, '"')
-                // 处理属性名中多余的引号
-                .replace(/"\\?"([^"]+)\\?""\s*:/g, '"$1":')
-                // 移除开头和结尾的空格
-                .trim();
-
-              // 确保是有效的 JSON 对象格式
-              if (!jsonString.startsWith("{")) {
-                jsonString = "{" + jsonString;
-              }
-              if (!jsonString.endsWith("}")) {
-                jsonString = jsonString + "}";
-              }
-
-              // 尝试解析 JSON
-              let jsonData;
+        );
+      } else {
+        // 处理普通图片生成流程
+        result = await handleColoringBookHero(
+          finalPrompt,
+          openAISettings,
+          async (content: string) => {
+            result += content;
+            if (insertBlock) {
+              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+            }
+          },
+          async (prompt: string) => {
+            if (insertBlock) {
               try {
-                jsonData = JSON.parse(jsonString);
-              } catch (firstError) {
-                try {
-                  // 如果第一次解析失败，尝试进一步修复
-                  jsonString = jsonString
-                    // 修复属性名格式
-                    .replace(/([{,]\s*)([^"{\s][^:]*?):/g, '$1"$2":')
-                    // 修复属性值格式
-                    .replace(/:\s*([^",{\[\s][^,}\]]*)/g, ':"$1"')
-                    // 修复多余的逗号
-                    .replace(/,\s*([}\]])/g, "$1")
-                    // 修复错误的引号嵌套
-                    .replace(/"([^"]*)""/g, '"$1"');
-
-                  console.debug("修复后的 JSON 字符串:", jsonString);
-                  jsonData = JSON.parse(jsonString);
-                } catch (secondError) {
-                  console.error("JSON 解析详情:", {
-                    originalString: jsonString,
-                    firstError,
-                    secondError,
-                    cleanedString: jsonString,
-                  });
-
-                  const errorMessage =
-                    secondError instanceof Error
-                      ? secondError.message
-                      : "未知的 JSON 格式错误";
-
-                  throw new JSONParseError(
-                    `JSON 格式错误: ${errorMessage}`,
-                    jsonString
+                const imageResponse = await dallE_gptsToml(
+                  prompt,
+                  openAISettings,
+                  imageSize
+                );
+                if ("url" in imageResponse) {
+                  const imageFileName = await saveDalleImage(imageResponse.url);
+                  result = result.replace(
+                    "\n为该段落绘图中，请稍后...",
+                    `\n${imageFileName}\n`
                   );
+                  if (insertBlock) {
+                    await logseq.Editor.updateBlock(insertBlock.uuid, result);
+                  }
+                }
+              } catch (error) {
+                console.error("图片生成失败:", error);
+                const errorResult = handleOpenAIError(error);
+                result = result.replace(
+                  "\n为该段落绘图中，请稍后...",
+                  `\n${errorResult.error}\n`
+                );
+                if (insertBlock) {
+                  await logseq.Editor.updateBlock(insertBlock.uuid, result);
                 }
               }
-
-              // 验证和处理解析后的数据
-              if (!jsonData || typeof jsonData !== "object") {
-                throw new JSONParseError(
-                  "解析结果不是有效的 JSON 对象",
-                  jsonString
-                );
-              }
-
-              // 提取和验证必要的属性
-              const promptText =
-                jsonData.prompt?.toString().trim() ||
-                jsonData.text?.toString().trim() ||
-                jsonData.description?.toString().trim();
-
-              if (!promptText) {
-                throw new JSONParseError("提示词不能为空", jsonString);
-              }
-
-              // 构建标准化的对象并显示
-              const promptObj = {
-                prompt: promptText,
-                size: (jsonData.size?.toString() || "1024x1024").trim(),
-                n: Math.min(
-                  Math.max(1, parseInt(String(jsonData.n || 1), 10)),
-                  10
-                ),
-              };
-
-              // 先解构获取 n
-              const { prompt: finalPromptText, size, n } = promptObj;
-              console.log(`计划生成 ${n} 幅图片`);
-
-              // 然后再使用 n 显示进度
-              result = `提示词：\n\`\`\`json\n${formatJsonString(
-                promptObj
-              )}\n\`\`\`\n\n准备生成 ${n} 幅图片...\n`;
-              if (insertBlock) {
-                await logseq.Editor.updateBlock(insertBlock.uuid, result);
-              }
-
-              // 构建所有图片的提示词
-              const imagePrompts = Array.from({ length: n }, (_, i) => {
-                // 获取当前场景的序号
-                const sceneIndex = i + 1;
-
-                // 构建完整的提示词，包含所有背景信息和具体场景指令
-                const fullPrompt = `${finalPromptText}当前指令：绘制第${sceneIndex}幅场景`;
-
-                // 记录日志，确认提示词的完整性
-                console.log(
-                  `\n准备第${sceneIndex}幅场景的提示词：\n`,
-                  JSON.stringify(
-                    {
-                      prompt: fullPrompt,
-                      size,
-                      n: 1,
-                    },
-                    null,
-                    2
-                  )
-                );
-
-                return {
-                  prompt: fullPrompt,
-                  size,
-                };
-              });
-
-              // 初始显示 JSON 文档
-              result = `提示词：\n\`\`\`json\n${formatJsonString(
-                promptObj
-              )}\n\`\`\`\n`;
-              if (insertBlock) {
-                await logseq.Editor.updateBlock(insertBlock.uuid, result);
-              }
-
-              // 逐个处理图片并实时显示
-              const processedImages = await processImagesSequentially(
-                imagePrompts,
-                openAISettings,
-                insertBlock,
-                result
-              );
-
-              // 更新最终结果，保持 JSON 文档在最上方
-              result = `提示词：\n\`\`\`json\n${formatJsonString(
-                promptObj
-              )}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
-              if (insertBlock) {
-                await logseq.Editor.updateBlock(insertBlock.uuid, result);
-              }
-            } catch (parseError) {
-              console.error("JSON 解析错误:", parseError);
-              handleOpenAIError(
-                new JSONParseError(
-                  parseError instanceof Error
-                    ? parseError.message
-                    : "未知的 JSON 解析错误",
-                  jsonString
-                )
-              );
             }
-          } else {
-            await handleRegularTextResponse();
-          }
-        } catch (error) {
-          console.error("onStop 执行错误:", error);
-          handleOpenAIError(error);
-        }
-      };
+          },
+          () => {}
+        );
+      }
 
-      // 处理常规文本响应的辅助函数
-      const handleRegularTextResponse = async () => {
-        if (!result) {
-          // 如果没有结果，尝试重新发送请求
-          await openAIWithStreamGptsToml(
-            finalPrompt,
-            openAISettings,
-            onContent,
-            onImagePrompt,
-            onStop
-          );
-          return;
-        }
-        if (insertBlock) {
-          await logseq.Editor.updateBlock(insertBlock.uuid, result);
-        }
-      };
-
-      await openAIWithStreamGptsToml(
-        finalPrompt,
-        openAISettings,
-        onContent,
-        onImagePrompt,
-        onStop
-      );
-    } catch (error) {
+      if (!result) {
+        showMessage("No OpenAI content", "warning");
+        return;
+      }
+    } catch (error: any) {
       console.error("执行错误:", error);
       handleOpenAIError(error);
     }
@@ -702,8 +638,13 @@ async function processImagesSequentially(
         `第 ${result.index + 1}/${imagePrompts.length} 幅图片插入完成\n`
       );
     } else {
-      console.error(`第 ${result.index + 1} 幅图片生成失败，详细错误：`, result.error);
-      const error = new Error(result.error || `第 ${result.index + 1} 张图片生成失败`);
+      console.error(
+        `第 ${result.index + 1} 幅图片生成失败，详细错误：`,
+        result.error
+      );
+      const error = new Error(
+        result.error || `第 ${result.index + 1} 张图片生成失败`
+      );
       const errorResult = handleOpenAIError(error);
       processedImages[result.index] = `\n${errorResult.error}\n`;
     }
@@ -829,7 +770,7 @@ function formatJsonString(jsonObj: any): string {
       .map((line: string) => line.trim())
       .join("\n    "); // 4个空格的缩进
 
-    // 创建格式化的 JSON 字符串
+    // 创建格式���的 JSON 字符串
     return `{
   "prompt": "${formattedPrompt}",
   "size": "${jsonObj.size}",

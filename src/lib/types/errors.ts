@@ -40,7 +40,7 @@ export function handleOpenAIError(e: any) {
   if (e instanceof JSONParseError) {
     const message = "提示词格式错误: " + (e.message || "请检查命令模板");
     showMessage(message, "warning");
-    console.debug("JSON 解析错误详情:", {
+    console.debug("JSON 解析错误详���:", {
       message: e.message,
       jsonString: e.jsonString,
       stack: e.stack,
@@ -158,8 +158,75 @@ export function handleOpenAIError(e: any) {
     return { error: e.message };
   }
 
+  // 添加图片生成相关错误处理
+  if (e.message?.includes("429")) {
+    showMessage("服务器繁忙，请稍后重试", "warning");
+    return { 
+      error: "\n服务器繁忙，请稍后重试 (错误代码: 429)\n",
+      status: 429 
+    };
+  }
+
+  // 图片生成失败
+  if (e.message?.includes("Failed to generate image")) {
+    showMessage("图片生成失败，请稍后重试", "error");
+    return { 
+      error: "\n图片生成失败\n" 
+    };
+  }
+
+  // 图片保存失败
+  if (e.message?.includes("Failed to save image")) {
+    showMessage("图片保存失败，请检查权限", "error");
+    return { 
+      error: "\n图片保存失败\n" 
+    };
+  }
+
+  // 处理 visiblePlaceholder 相关错误
+  if (e.message?.includes("placeholder")) {
+    const errorMessage = e.message?.includes("429")
+      ? "\n服务器繁忙，请稍后重试 (错误代码: 429)\n"
+      : "\n图片生成失败\n";
+    return { error: errorMessage };
+  }
+
   // 完全未知的错误
   console.error("Unexpected error:", e);
   showMessage("发生未知错误，请稍后重试", "error");
   return { error: "未知错误" };
+
+  // 添加页面内容获取错误处理
+  if (e.message?.includes("Block not found")) {
+    console.error("获取页面内容失败：找不到指定的块", e);
+    showMessage("找不到指定的块", "error");
+    return { error: "找不到指定的块" };
+  }
+
+  if (e.message?.includes("Page not found")) {
+    console.error("获取页面内容失败：找不到指定的页面", e);
+    showMessage("找不到指定的页面", "error");
+    return { error: "找不到指定的页面" };
+  }
+
+  // 添加音频文件处理错误
+  if (e.message?.includes("Audio file")) {
+    console.error("音频文件处理失败：", e);
+    showMessage("音频文件处理失败", "error");
+    return { error: "音频文件处理失败" };
+  }
+
+  // 添加流式响应错误
+  if (e.message?.includes("stream response")) {
+    console.error("流式响应处理失败：", e);
+    showMessage("响应处理失败，请重试", "error");
+    return { error: "响应处理失败" };
+  }
+
+  // 添加 API 响应错误
+  if (e.message?.includes("API response")) {
+    console.error("API 响应异常：", e);
+    showMessage("API 响应异常，请重试", "error");
+    return { error: "API 响应异常" };
+  }
 }

@@ -56,7 +56,8 @@ export async function getPageContentFromBlock(b: BlockEntity): Promise<string> {
     return blockContents.join(" ");
   } catch (error: unknown) {
     console.error("获取页面内容时出错:", error);
-    throw await handleOpenAIError(error);
+    const errorResult = handleOpenAIError(error);
+    throw new Error(errorResult.error);
   }
 }
 

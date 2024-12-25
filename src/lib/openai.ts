@@ -455,10 +455,10 @@ export async function openAIWithStream(
     return readStream().catch((error) => {
       throw error; // 向上抛出错误
     });
-  } catch (error: any) {
-    // 使用 handleOpenAIError 统一处理错误
-    handleOpenAIError(error);
-    return null;
+  } catch (error: unknown) {
+    console.error("流式处理失败:", error);
+    const errorResult = handleOpenAIError(error);
+    throw new Error(errorResult.error);
   }
 }
 
@@ -632,10 +632,10 @@ export async function openAIWithStreamGptsID(
     }
 
     return null;
-  } catch (error: any) {
-    // 使用 handleOpenAIError 统一处理错误
-    handleOpenAIError(error);
-    return null;
+  } catch (error: unknown) {
+    console.error("流式处理失败:", error);
+    const errorResult = handleOpenAIError(error);
+    throw new Error(errorResult.error);
   } finally {
     onStop();
   }

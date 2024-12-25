@@ -372,23 +372,18 @@ export async function createRunGptsTomlCommand(command: Command) {
                 await logseq.Editor.updateBlock(insertBlock.uuid, result);
               }
             } catch (error) {
-              console.error("Failed to save image:", error);
-              result = result.replace(
-                `\n${visiblePlaceholder}`,
-                "\n图片保存失败\n"
-              );
+              console.error("图片保存失败，详细错误：", error);
+              const errorResult = handleOpenAIError(error);
+              result = result.replace(`\n${visiblePlaceholder}`, errorResult.error);
               if (insertBlock) {
                 await logseq.Editor.updateBlock(insertBlock.uuid, result);
               }
             }
           }
         } catch (error: any) {
-          console.error("Failed to generate image:", error);
-          const errorMessage = error.message?.includes("429")
-            ? "\n服务器繁忙，请稍后重试 (错误代码: 429)\n"
-            : "\n图片生成失败\n";
-
-          result = result.replace(`\n${visiblePlaceholder}`, errorMessage);
+          console.error("图片生成失败，详细错误：", error);
+          const errorResult = handleOpenAIError(error);
+          result = result.replace(`\n${visiblePlaceholder}`, errorResult.error);
           if (insertBlock) {
             await logseq.Editor.updateBlock(insertBlock.uuid, result);
           }
@@ -707,9 +702,10 @@ async function processImagesSequentially(
         `第 ${result.index + 1}/${imagePrompts.length} 幅图片插入完成\n`
       );
     } else {
-      const errorMessage = `第 ${result.index + 1} 张图片生成失败\n`;
-      processedImages[result.index] = errorMessage;
-      handleOpenAIError(new Error(result.error || errorMessage));
+      console.error(`第 ${result.index + 1} 幅图片生成失败，详细错误：`, result.error);
+      const error = new Error(result.error || `第 ${result.index + 1} 张图片生成失败`);
+      const errorResult = handleOpenAIError(error);
+      processedImages[result.index] = `\n${errorResult.error}\n`;
     }
   }
 

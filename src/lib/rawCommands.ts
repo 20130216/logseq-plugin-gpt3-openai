@@ -289,9 +289,10 @@ async function handleColoringBookHero2(
     let jsonData = await parseAndValidateJSON(jsonString);
 
     // 提取和验证必要的属性
-    const promptText = jsonData.prompt?.toString().trim() || 
-                      jsonData.text?.toString().trim() || 
-                      jsonData.description?.toString().trim();
+    const promptText =
+      jsonData.prompt?.toString().trim() ||
+      jsonData.text?.toString().trim() ||
+      jsonData.description?.toString().trim();
 
     if (!promptText) {
       throw new JSONParseError("提示词不能为空", jsonString);
@@ -301,14 +302,16 @@ async function handleColoringBookHero2(
     const promptObj = {
       prompt: promptText,
       size: (jsonData.size?.toString() || "1024x1024").trim(),
-      n: Math.min(Math.max(1, parseInt(String(jsonData.n || 1), 10)), 10)
+      n: Math.min(Math.max(1, parseInt(String(jsonData.n || 1), 10)), 10),
     };
 
     const { prompt: finalPromptText, size, n } = promptObj;
     console.log(`计划生成 ${n} 幅图片`);
 
     // 显示初始 JSON 文档
-    result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n\n准备生成 ${n} 幅图片...\n`;
+    result = `提示词：\n\`\`\`json\n${formatJsonString(
+      promptObj
+    )}\n\`\`\`\n\n准备生成 ${n} 幅图片...\n`;
     if (insertBlock) {
       await logseq.Editor.updateBlock(insertBlock.uuid, result);
     }
@@ -323,9 +326,16 @@ async function handleColoringBookHero2(
     }
 
     // 处理图片并更新结果
-    const processedImages = await processImagesSequentially(imagePrompts, openAISettings, insertBlock, result);
-    
-    result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
+    const processedImages = await processImagesSequentially(
+      imagePrompts,
+      openAISettings,
+      insertBlock,
+      result
+    );
+
+    result = `提示词：\n\`\`\`json\n${formatJsonString(
+      promptObj
+    )}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
     if (insertBlock) {
       await logseq.Editor.updateBlock(insertBlock.uuid, result);
     }
@@ -348,21 +358,92 @@ async function handleColoringBookHero(
   onImagePrompt: (imagePrompt: string) => void,
   onStop: () => void
 ): Promise<string> {
-  const result = await openAIWithStreamGptsToml(
+  let paragraphs: { text: string; imagePrompt: string; index: number }[] = [];
+  let currentParagraph = "";
+  let currentIndex = 0;
+
+  // 收集所有段落
+  await openAIWithStreamGptsToml(
     finalPrompt,
     openAISettings,
-    onContent,
-    onImagePrompt,
+    async (content: string) => {
+      currentParagraph += content;
+      if (content.includes("为该段落绘图中，请稍后...")) {
+        paragraphs.push({
+          text: currentParagraph,
+          imagePrompt: currentParagraph
+            .replace("为该段落绘图中，请稍后...", "")
+            .trim(),
+          index: currentIndex++,
+        });
+        currentParagraph = "";
+      }
+      await onContent(content);
+    },
+    () => {},
     onStop
   );
-  
-  // 确保返回字符串类型
-  if (typeof result === 'string') {
-    return result;
-  } else if (result && 'error' in result) {
-    throw new Error(result.error);
+
+  // 并行生成所有图片
+  const imageResults = await Promise.all(
+    paragraphs.map(async (para) => {
+      console.log(`开始生成第 ${para.index + 1} 个段落的图片`);
+      console.log(
+        `第 ${para.index + 1} 个段落的绘图提示词:\n`,
+        para.imagePrompt
+      );
+
+      try {
+        const imageResponse = await dallE_gptsToml(
+          para.imagePrompt,
+          openAISettings,
+          "1024x1024"
+        );
+
+        if ("url" in imageResponse) {
+          const imageFileName = await saveDalleImage(imageResponse.url);
+          return {
+            index: para.index,
+            success: true,
+            fileName: imageFileName,
+            text: para.text,
+          };
+        }
+        throw new Error("Invalid image response");
+      } catch (error) {
+        console.error(`第 ${para.index + 1} 个段落的图片生成失败:`, error);
+        return {
+          index: para.index,
+          success: false,
+          error,
+          text: para.text,
+        };
+      }
+    })
+  );
+
+  // 按顺序处理结果
+  for (const result of imageResults.sort((a, b) => a.index - b.index)) {
+    console.log(`处理第 ${result.index + 1} 个段落的图片结果`);
+    if (result.success) {
+      await onImagePrompt(
+        result.text.replace(
+          "\n为该段落绘图中，请稍后...",
+          `\n${result.fileName}\n`
+        )
+      );
+    } else {
+      const errorResult = handleOpenAIError(result.error);
+      await onImagePrompt(
+        result.text.replace(
+          "\n为该段落绘图中，请稍后...",
+          `\n${errorResult.error}\n`
+        )
+      );
+    }
   }
-  return '';
+
+  return currentParagraph;
 }
 
 // JSON 解析和验证的辅助函数
@@ -388,9 +469,10 @@ async function parseAndValidateJSON(jsonString: string): Promise<any> {
         cleanedString: jsonString,
       });
 
-      const errorMessage = secondError instanceof Error 
-        ? secondError.message 
-        : "未知的 JSON 格式错误";
+      const errorMessage =
+        secondError instanceof Error
+          ? secondError.message
+          : "未知的 JSON 格式错误";
 
       throw new JSONParseError(`JSON 格式错误: ${errorMessage}`, jsonString);
     }
@@ -428,7 +510,9 @@ export async function createRunGptsTomlCommand(command: Command) {
   return async (b: IHookEvent) => {
     try {
       // 获取和验证设置
-      const openAISettings = await ResourceOptimizer.getResource("openai-settings");
+      const openAISettings = await ResourceOptimizer.getResource(
+        "openai-settings"
+      );
       await validateSettings(openAISettings);
 
       // 获取和验证当前块
@@ -770,7 +854,7 @@ function formatJsonString(jsonObj: any): string {
       .map((line: string) => line.trim())
       .join("\n    "); // 4个空格的缩进
 
-    // 创建格式���的 JSON 字符串
+    // 创建格式化的 JSON 字符串
     return `{
   "prompt": "${formattedPrompt}",
   "size": "${jsonObj.size}",

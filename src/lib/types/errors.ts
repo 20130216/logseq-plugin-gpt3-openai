@@ -161,25 +161,25 @@ export function handleOpenAIError(e: any) {
   // 添加图片生成相关错误处理
   if (e.message?.includes("429")) {
     showMessage("服务器繁忙，请稍后重试", "warning");
-    return { 
+    return {
       error: "\n服务器繁忙，请稍后重试 (错误代码: 429)\n",
-      status: 429 
+      status: 429,
     };
   }
 
   // 图片生成失败
   if (e.message?.includes("Failed to generate image")) {
     showMessage("图片生成失败，请稍后重试", "error");
-    return { 
-      error: "\n图片生成失败\n" 
+    return {
+      error: "\n图片生成失败\n",
     };
   }
 
   // 图片保存失败
   if (e.message?.includes("Failed to save image")) {
     showMessage("图片保存失败，请检查权限", "error");
-    return { 
-      error: "\n图片保存失败\n" 
+    return {
+      error: "\n图片保存失败\n",
     };
   }
 

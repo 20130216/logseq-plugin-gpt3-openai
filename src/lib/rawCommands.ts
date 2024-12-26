@@ -253,12 +253,6 @@ export async function runGptsID(
   }
 }
 
-// 新增函数1 for gpts-toml
-function parseImageSizeFromPrompt(prompt: string): string | null {
-  const match = prompt.match(/(1024x1024|720x1280|1280x720)/);
-  return match ? match[0] : null;
-}
-
 // 处理 JSON 解析流程的函数
 async function handleColoringBookHero2(
   jsonString: string,
@@ -350,100 +344,116 @@ async function handleColoringBookHero2(
   }
 }
 
-// 处理普通图片生成流程的函数
+// 处理普通图片生成流程的函数 - 优化并行处理
 async function handleColoringBookHero(
   finalPrompt: string,
   openAISettings: OpenAIOptions,
   onContent: (content: string) => void,
-  onImagePrompt: (imagePrompt: string) => void,
+  onImagePrompt: (content: string) => void,
   onStop: () => void
 ): Promise<string> {
-  let paragraphs: { text: string; imagePrompt: string; index: number }[] = [];
+  const paragraphs: Array<{
+    text: string;
+    imagePrompt: string;
+    index: number;
+  }> = [];
+
   let currentParagraph = "";
   let currentIndex = 0;
+  const searchText = "为该段落绘图中，请稍后...";
 
-  // 收集所有段落
+  // 1. 改进段落收集逻辑，避免重复
   await openAIWithStreamGptsToml(
     finalPrompt,
     openAISettings,
     async (content: string) => {
       currentParagraph += content;
-      if (content.includes("为该段落绘图中，请稍后...")) {
-        paragraphs.push({
-          text: currentParagraph,
-          imagePrompt: currentParagraph
-            .replace("为该段落绘图中，请稍后...", "")
-            .trim(),
-          index: currentIndex++,
-        });
-        currentParagraph = "";
+
+      // 只在找到完整段落时处理
+      if (content.includes(searchText)) {
+        // 提取段落内容和绘图需求，避免重复
+        const parts = currentParagraph.split("【绘图需求】：");
+        if (parts.length >= 2) {
+          // 移除可能的重复段落标记
+          const text = parts[0].replace(/段落\d+\s+/g, "").trim();
+          const imagePrompt = parts[1].replace(searchText, "").trim();
+
+          paragraphs.push({
+            text,
+            imagePrompt,
+            index: currentIndex++,
+          });
+
+          // 重置当前段落
+          currentParagraph = "";
+
+          // 使用标准格式输出
+          onContent(
+            `段落${currentIndex}\n${text}\n【绘图需求】：${imagePrompt}\n为该段落绘图中，请稍后...\n\n`
+          );
+        }
       }
-      await onContent(content);
     },
     () => {},
     onStop
   );
 
-  // 并行生成所有图片
-  const imageResults = await Promise.all(
-    paragraphs.map(async (para) => {
-      console.log(`开始生成第 ${para.index + 1} 个段落的图片`);
-      console.log(
-        `第 ${para.index + 1} 个段落的绘图提示词:\n`,
+  // 创建一个映射来存储每个段落的内容
+  const contentSegments = new Map<number, string>();
+  paragraphs.forEach((para, index) => {
+    contentSegments.set(
+      index,
+      `段落${index + 1}\n${para.text}\n【绘图需求】：${
         para.imagePrompt
+      }\n为该段落绘图中，请稍后...\n\n`
+    );
+  });
+
+  // 更新显示函数
+  const updateDisplay = () => {
+    const sortedContent = Array.from(contentSegments.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([_, content]) => content)
+      .join("");
+    onImagePrompt(sortedContent);
+  };
+
+  // 并行处理所有图片
+  const imagePromises = paragraphs.map(async (para, index) => {
+    try {
+      const imageResponse = await dallE_gptsToml(
+        para.imagePrompt,
+        openAISettings,
+        openAISettings.dalleImageSize || "1024x1024"
       );
 
-      try {
-        const imageResponse = await dallE_gptsToml(
-          para.imagePrompt,
-          openAISettings,
-          "1024x1024"
+      if ("url" in imageResponse) {
+        const imageFileName = await saveDalleImage(imageResponse.url);
+        // 修复图片路径格式
+        contentSegments.set(
+          index,
+          `段落${index + 1}\n${para.text}\n【绘图需求】：${
+            para.imagePrompt
+          }\n${imageFileName}\n\n`
         );
-
-        if ("url" in imageResponse) {
-          const imageFileName = await saveDalleImage(imageResponse.url);
-          return {
-            index: para.index,
-            success: true,
-            fileName: imageFileName,
-            text: para.text,
-          };
-        }
-        throw new Error("Invalid image response");
-      } catch (error) {
-        console.error(`第 ${para.index + 1} 个段落的图片生成失败:`, error);
-        return {
-          index: para.index,
-          success: false,
-          error,
-          text: para.text,
-        };
+        updateDisplay();
+      } else {
+        throw new Error(imageResponse.error);
       }
-    })
-  );
-
-  // 按顺序处理结果
-  for (const result of imageResults.sort((a, b) => a.index - b.index)) {
-    console.log(`处理第 ${result.index + 1} 个段落的图片结果`);
-    if (result.success) {
-      await onImagePrompt(
-        result.text.replace(
-          "\n为该段落绘图中，请稍后...",
-          `\n${result.fileName}\n`
-        )
+    } catch (error) {
+      const errorResult = handleOpenAIError(error);
+      contentSegments.set(
+        index,
+        `段落${index + 1}\n${para.text}\n【绘图需求】：${
+          para.imagePrompt
+        }\n> Error: ${errorResult.error}\n\n`
       );
-    } else {
-      const errorResult = handleOpenAIError(result.error);
-      await onImagePrompt(
-        result.text.replace(
-          "\n为该段落绘图中，请稍后...",
-          `\n${errorResult.error}\n`
-        )
-      );
+      updateDisplay();
     }
-  }
+  });
 
-  return currentParagraph;
+  await Promise.all(imagePromises);
+  return Array.from(contentSegments.values()).join("");
 }
 
 // JSON 解析和验证的辅助函数
@@ -452,11 +462,41 @@ async function parseAndValidateJSON(jsonString: string): Promise<any> {
     return JSON.parse(jsonString);
   } catch (firstError) {
     try {
-      // 如果第一次解析失败，尝试进一步修复
+      // 修复常见的 JSON 格式问题
       jsonString = jsonString
-        .replace(/([{,]\s*)([^"{\s][^:]*?):/g, '$1"$2":')
+        // 修复键名中的多余空格
+        .replace(/([{,]\s*)([^"{\s][^:]*?)\s*:/g, '$1"$2":')
+        // 修复值中的格式问题
         .replace(/:\s*([^",{\[\s][^,}\]]*)/g, ':"$1"')
+        // 修复尺寸格式
+        .replace(/"size"\s*:\s*"([^"]+)"/g, (_match, size) => {
+          // 标准化尺寸格式
+          const validSizes = [
+            "256x256",
+            "512x512",
+            "1024x1024",
+            "1024x1792",
+            "1792x1024",
+          ];
+          size = size.replace(/\s+/g, ""); // 移除空格
+
+          // 处理简写形式
+          if (size.match(/^\d+$/)) {
+            size = `${size}x${size}`;
+          }
+
+          // 验证尺寸是否有效
+          if (!validSizes.includes(size)) {
+            size = "1024x1024"; // 默认尺寸
+          }
+
+          return `"size":"${size}"`;
+        })
+        // 修复数字格式
+        .replace(/"n"\s*:\s*"(\d+)"/g, '"n":$1')
+        // 清理多余的逗号
         .replace(/,\s*([}\]])/g, "$1")
+        // 修复重复的引号
         .replace(/"([^"]*)""/g, '"$1"');
 
       console.debug("修复后的 JSON 字符串:", jsonString);
@@ -483,7 +523,7 @@ async function parseAndValidateJSON(jsonString: string): Promise<any> {
 function buildImagePrompts(finalPromptText: string, size: string, n: number) {
   return Array.from({ length: n }, (_, i) => {
     const sceneIndex = i + 1;
-    const fullPrompt = `${finalPromptText}当前指令：绘制第${sceneIndex}幅场景`;
+    const fullPrompt = `${finalPromptText}当指令：绘制第${sceneIndex}幅场景`;
 
     console.log(
       `\n准备第${sceneIndex}幅场景的提示词：\n`,
@@ -553,7 +593,6 @@ export async function createRunGptsTomlCommand(command: Command) {
       );
 
       const finalPrompt = command.prompt + currentBlock.content;
-      const imageSize = parseImageSizeFromPrompt(finalPrompt) || "1024x1024";
 
       // 根据命令类型选择处理流程
       if (command.isParseJson) {
@@ -587,41 +626,16 @@ export async function createRunGptsTomlCommand(command: Command) {
         result = await handleColoringBookHero(
           finalPrompt,
           openAISettings,
-          async (content: string) => {
+          (content: string) => {
             result += content;
             if (insertBlock) {
-              await logseq.Editor.updateBlock(insertBlock.uuid, result);
+              logseq.Editor.updateBlock(insertBlock.uuid, result);
             }
           },
-          async (prompt: string) => {
+          (content: string) => {
+            result = content;
             if (insertBlock) {
-              try {
-                const imageResponse = await dallE_gptsToml(
-                  prompt,
-                  openAISettings,
-                  imageSize
-                );
-                if ("url" in imageResponse) {
-                  const imageFileName = await saveDalleImage(imageResponse.url);
-                  result = result.replace(
-                    "\n为该段落绘图中，请稍后...",
-                    `\n${imageFileName}\n`
-                  );
-                  if (insertBlock) {
-                    await logseq.Editor.updateBlock(insertBlock.uuid, result);
-                  }
-                }
-              } catch (error) {
-                console.error("图片生成失败:", error);
-                const errorResult = handleOpenAIError(error);
-                result = result.replace(
-                  "\n为该段落绘图中，请稍后...",
-                  `\n${errorResult.error}\n`
-                );
-                if (insertBlock) {
-                  await logseq.Editor.updateBlock(insertBlock.uuid, result);
-                }
-              }
+              logseq.Editor.updateBlock(insertBlock.uuid, result);
             }
           },
           () => {}
@@ -812,7 +826,7 @@ export async function runReadImageURL(b: IHookEvent) {
       let description: string | null = null;
 
       if (isRemoteUrl) {
-        // 如果是远程图片链接，调用 readImageURL
+        // 如果远程图片链接，调用 readImageURL
         description = await readImageURL(imageUrl, openAISettings);
       } else {
         // 如果是本图片路径调用 readLocalImageURL
@@ -842,14 +856,14 @@ function formatJsonString(jsonObj: any): string {
         "\n$1："
       )
       // 在角色描述前添加换行
-      .replace(/( - [^，。：]+)：/g, "\n$1：")
-      // 在子场景前添加换行
+      .replace(/( - [^，。：]+)：/g, "\n$1")
+      // 在子场景添加行
       .replace(/(第[一二三四五六七八九十]幅)/g, "\n$1")
       // 确保段落之间有足够空行
       .replace(/\n\n+/g, "\n\n")
       // 移除开头的空行
       .replace(/^\n+/, "")
-      // 确保每行前面有适当的缩进
+      // 确保行前面有适当的缩进
       .split("\n")
       .map((line: string) => line.trim())
       .join("\n    "); // 4个空格的缩进

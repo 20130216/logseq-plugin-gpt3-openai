@@ -352,6 +352,8 @@ async function handleColoringBookHero(
   onImagePrompt: (content: string) => void,
   onStop: () => void
 ): Promise<string> {
+  console.log("\n=== 开始处理 Coloring Book Hero 请求 ===");
+  const contentSegments = new Map<number, string>();
   const paragraphs: Array<{
     text: string;
     imagePrompt: string;
@@ -362,35 +364,34 @@ async function handleColoringBookHero(
   let currentIndex = 0;
   const searchText = "为该段落绘图中，请稍后...";
 
-  // 1. 改进段落收集逻辑，避免重复
+  // 1. 收集段落
+  console.log("\n[Phase 1] 开始收集段落...");
   await openAIWithStreamGptsToml(
     finalPrompt,
     openAISettings,
     async (content: string) => {
       currentParagraph += content;
-
-      // 只在找到完整段落时处理
       if (content.includes(searchText)) {
-        // 提取段落内容和绘图需求，避免重复
-        const parts = currentParagraph.split("【绘图需求】：");
-        if (parts.length >= 2) {
-          // 移除可能的重复段落标记
-          const text = parts[0].replace(/段落\d+\s+/g, "").trim();
-          const imagePrompt = parts[1].replace(searchText, "").trim();
+        const result = splitByDrawingPrompt(currentParagraph);
+        if (result) {
+          const text = result.content.replace(/段落\d+\s+/g, "").trim();
+          const imagePrompt = result.prompt.replace(searchText, "").trim();
 
           paragraphs.push({
             text,
             imagePrompt,
-            index: currentIndex++,
+            index: currentIndex,
           });
 
-          // 重置当前段落
-          currentParagraph = "";
+          const initialContent = `段落${
+            currentIndex + 1
+          }\n${text}\n【绘图需求】：${imagePrompt}\n为该段落绘图中，请稍后...\n\n`;
+          contentSegments.set(currentIndex, initialContent);
 
-          // 使用标准格式输出
-          onContent(
-            `段落${currentIndex}\n${text}\n【绘图需求】：${imagePrompt}\n为该段落绘图中，请稍后...\n\n`
-          );
+          onContent(initialContent);
+
+          currentParagraph = "";
+          currentIndex++;
         }
       }
     },
@@ -398,62 +399,82 @@ async function handleColoringBookHero(
     onStop
   );
 
-  // 创建一个映射来存储每个段落的内容
-  const contentSegments = new Map<number, string>();
-  paragraphs.forEach((para, index) => {
-    contentSegments.set(
-      index,
-      `段落${index + 1}\n${para.text}\n【绘图需求】：${
-        para.imagePrompt
-      }\n为该段落绘图中，请稍后...\n\n`
-    );
-  });
+  console.log(
+    `\n[Phase 2] 开始并行处理 ${paragraphs.length} 个图片生成请求...`
+  );
 
-  // 更新显示函数
-  const updateDisplay = () => {
-    const sortedContent = Array.from(contentSegments.entries())
-      .sort(([a], [b]) => a - b)
-      .map(([_, content]) => content)
-      .join("");
-    onImagePrompt(sortedContent);
-  };
-
-  // 并行处理所有图片
-  const imagePromises = paragraphs.map(async (para, index) => {
+  // 2. 优化并行处理和插入
+  const insertPromises = paragraphs.map(async (para) => {
     try {
+      console.log(`\n[图片生成开始] 段落 ${para.index + 1}`);
+      console.log(`[DALL-E API] 绘图提示词: ${para.imagePrompt}`);
+
+      const startTime = Date.now();
       const imageResponse = await dallE_gptsToml(
         para.imagePrompt,
         openAISettings,
         openAISettings.dalleImageSize || "1024x1024"
       );
 
+      console.log(
+        `[图片生成完成] 段落 ${para.index + 1}, 耗时: ${
+          Date.now() - startTime
+        }ms`
+      );
+
       if ("url" in imageResponse) {
+        console.log(`[开始保存图片] 段落 ${para.index + 1}`);
         const imageFileName = await saveDalleImage(imageResponse.url);
-        // 修复图片路径格式
-        contentSegments.set(
-          index,
-          `段落${index + 1}\n${para.text}\n【绘图需求】：${
-            para.imagePrompt
-          }\n${imageFileName}\n\n`
+        console.log(
+          `[图片保存完成] 段落 ${para.index + 1}, 文件名: ${imageFileName}`
         );
-        updateDisplay();
+
+        const updatedContent = `段落${para.index + 1}\n${
+          para.text
+        }\n【绘图需求】：${para.imagePrompt}\n${imageFileName}\n\n`;
+
+        contentSegments.set(para.index, updatedContent);
+
+        const sortedContent = Array.from(contentSegments.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([_, content]) => content)
+          .join("");
+
+        console.log(
+          `[内容更新] 段落 ${para.index + 1} 的内容已更新并触发显示更新`
+        );
+
+        await Promise.resolve(onImagePrompt(sortedContent));
       } else {
         throw new Error(imageResponse.error);
       }
     } catch (error) {
+      console.error(`[错误处理] 段落 ${para.index + 1} 处理失败:`, error);
+
       const errorResult = handleOpenAIError(error);
-      contentSegments.set(
-        index,
-        `段落${index + 1}\n${para.text}\n【绘图需求】：${
-          para.imagePrompt
-        }\n> Error: ${errorResult.error}\n\n`
-      );
-      updateDisplay();
+      const errorContent = `段落${para.index + 1}\n${
+        para.text
+      }\n【绘图需求】：${para.imagePrompt}\n> Error: ${errorResult.error}\n\n`;
+
+      contentSegments.set(para.index, errorContent);
+
+      const sortedContent = Array.from(contentSegments.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([_, content]) => content)
+        .join("");
+
+      await Promise.resolve(onImagePrompt(sortedContent));
     }
   });
 
-  await Promise.all(imagePromises);
-  return Array.from(contentSegments.values()).join("");
+  console.log("\n[Phase 3] 等待所有并行操作完成...");
+  await Promise.all(insertPromises);
+  console.log("\n=== Coloring Book Hero 处理完成 ===\n");
+
+  return Array.from(contentSegments.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([_, content]) => content)
+    .join("");
 }
 
 // JSON 解析和验证的辅助函数
@@ -523,7 +544,7 @@ async function parseAndValidateJSON(jsonString: string): Promise<any> {
 function buildImagePrompts(finalPromptText: string, size: string, n: number) {
   return Array.from({ length: n }, (_, i) => {
     const sceneIndex = i + 1;
-    const fullPrompt = `${finalPromptText}当指令：绘制第${sceneIndex}幅场景`;
+    const fullPrompt = `${finalPromptText}当前指令：绘制第${sceneIndex}幅场景`;
 
     console.log(
       `\n准备第${sceneIndex}幅场景的提示词：\n`,
@@ -878,4 +899,101 @@ function formatJsonString(jsonObj: any): string {
 
   // 如果没有 prompt 字段，使用普通格式化
   return JSON.stringify(jsonObj, null, 2);
+}
+
+// 主要的绘图需求标记
+const PRIMARY_MARKER = "【绘图需求】：";
+
+// 常见完整变体列表
+const COMMON_VARIANTS = [
+  "【绘需求】：",
+  "【绘需求】:",
+  "【画图需求】：",
+  "【图需求】：",
+  "【绘图要求】：",
+  "【绘制需求】：",
+];
+
+// 处理缺字的正则模式
+const FUZZY_PATTERNS = [
+  // 处理缺少【】的情况
+  /绘[图画]需求[：:]/,
+  /画图需求[：:]/,
+
+  // 处理缺少冒号的情况
+  /【绘[图画]需求】/,
+  /【画图需求】/,
+
+  // 处理缺少部分字的情况
+  /【绘[图画]?需求?】[：:]?/,
+  /【[绘画图]需求】[：:]?/,
+  /【绘制需?求?】[：:]?/,
+
+  // 添加新的模式来处理格式不完整的情况
+  /【绘图需求[^】]*】/, // 处理需求后直接跟内容的情况
+  /【绘图需求.*?(?=\n|$)/, // 处理缺少结束符的情况
+
+  // 处理更宽松的格式
+  /【[绘画图][图需求要求].*?】/,
+  /【.*?需求.*?】/,
+];
+
+function splitByDrawingPrompt(
+  text: string
+): { content: string; prompt: string } | null {
+  // 1. 检查主要标记
+  let parts = text.split(PRIMARY_MARKER);
+  if (parts.length >= 2) {
+    return {
+      content: parts[0].trim(),
+      prompt: parts[1].trim(),
+    };
+  }
+
+  // 2. 检查常见完整变体
+  for (const variant of COMMON_VARIANTS) {
+    parts = text.split(variant);
+    if (parts.length >= 2) {
+      return {
+        content: parts[0].trim(),
+        prompt: parts[1].trim(),
+      };
+    }
+  }
+
+  // 3. 使用模糊匹配处理缺字情况
+  for (const pattern of FUZZY_PATTERNS) {
+    const match = text.match(pattern);
+    if (match) {
+      const marker = match[0];
+      // 提取实际的提示词，移除多余的字符并使用清理后的标记进行分割
+      const cleanMarker = marker.replace(
+        /【绘图需求([^】]*)】/,
+        "【绘图需求】：$1"
+      );
+      const parts = text.split(cleanMarker); // 使用 cleanMarker 替代 marker
+      if (parts.length >= 2) {
+        return {
+          content: parts[0].trim(),
+          prompt: parts[1].trim(),
+        };
+      }
+    }
+  }
+
+  // 4. 最后的通用模糊匹配
+  const generalPattern = /【[绘画图].{0,2}需求】[：:]/;
+  const match = text.match(generalPattern);
+  if (match) {
+    const marker = match[0];
+    parts = text.split(marker);
+    if (parts.length >= 2) {
+      return {
+        content: parts[0].trim(),
+        prompt: parts[1].trim(),
+      };
+    }
+  }
+
+  return null;
 }

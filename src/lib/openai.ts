@@ -416,7 +416,7 @@ export async function openAIWithStream(
           if (done) {
             reader.cancel(); // 如果结束，取消读取器
             onStop(); // 调用停止回调
-            return result; // 返回终结果
+            return result; // 返回最终结果
           }
 
           if (value !== null && value !== undefined) {
@@ -473,7 +473,7 @@ function trimLeadingWhitespace(text: string): string {
 // 1.异步处理：使用 async/await 语法使代码更洁、读。
 // 2.空值检查：增加了对 value 是否为 null 或 undefined 的检查，避免因空值导致的运行时错误。
 // 3.超时机制：增加了超时机制，防止长时间，提高系统的健壮性和用户体验。
-// 4.统一错误提示：无论错误的具体因是什么，都提供一个统一的用户友好的错误提示信息。
+// 4.统一错误提示：无论错误的具体因是什么，都提供一个统一的用户友好的错��提示信息。
 
 export async function openAIWithStreamGptsID(
   input: string,
@@ -854,7 +854,7 @@ export async function openAIWithStreamGptsToml(
                             checkAndExtractImagePrompt(paragraph, false);
                           if (hasRequest) {
                             result +=
-                              paragraph + "\n为该段落绘图中，请稍后...\n";
+                              paragraph + "\n为该段落绘图中，请稍��...\n";
                             onContent(
                               paragraph + "\n为该段落绘图中，请稍后...\n"
                             );
@@ -925,7 +925,7 @@ export async function dallE_gptsToml(
           );
         }
       }
-      // 使用配置中的默认端点
+      // 使用配置的默认端点
       return options.chatCompletionEndpoint || "https://api.shubiaobiao.cn/v1";
     })();
 
@@ -1284,3 +1284,61 @@ async function encodeImageToBase64(imagePath: string): Promise<string> {
     throw new Error(result.error);
   }
 }
+
+// 添加重试机制和���选协议
+const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3) => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      // 强制使用 HTTP/1.1
+      const newOptions = {
+        ...options,
+        headers: {
+          ...options.headers,
+          'Downgrade-Insecure-Requests': '1',
+          'Connection': 'keep-alive'
+        }
+      };
+      
+      const response = await fetch(url, newOptions);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return response;
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      // 等待一段时间后重试
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+  }
+};
+
+const getImage = async (url: string) => {
+  try {
+    // 首先尝试直接获取
+    const response = await fetchWithRetry(url, {});
+    if (response.ok) return response;
+
+    // 如果失败，尝试通过备用代理
+    const fallbackUrl = url.replace(
+      'dalle-proxy.jingjian.xyz',
+      'your-backup-proxy.com'
+    );
+    return await fetchWithRetry(fallbackUrl, {});
+  } catch (error) {
+    console.error('Image fetch failed:', error);
+    throw new Error('无法加载图片，请稍后重试');
+  }
+};
+
+const encodeImageUrl = (url: string) => {
+  // 确保 URL 编码正确
+  return encodeURIComponent(url)
+    .replace(/%2F/g, '/')
+    .replace(/%3A/g, ':')
+    .replace(/%3F/g, '?')
+    .replace(/%3D/g, '=')
+    .replace(/%26/g, '&');
+};
+
+const getProxyUrl = (originalUrl: string) => {
+  const encodedUrl = encodeImageUrl(originalUrl);
+  return `https://dalle-proxy.jingjian.xyz/proxy?url=${encodedUrl}`;
+};

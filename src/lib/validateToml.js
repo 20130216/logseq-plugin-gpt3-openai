@@ -2,21 +2,24 @@ const fs = require('fs');
 const toml = require('@iarna/toml');
 const pinyin = require('node-pinyin');
 
+// 检查 TOML 文件是否有效
 function isTomlFileValid(filePath) {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     toml.parse(content);
     return true;
   } catch (error) {
-    console.error(`TOML文件无效: ${error.message}`);
+    console.error(`TOML 文件无效: ${error.message}`);
     return false;
   }
 }
 
+// 检查键名是否有效
 function isValidIdentifier(key) {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key);
 }
 
+// 修复键名
 function sanitizeKey(key) {
   console.log(`原始键名: ${key}`);
 
@@ -26,8 +29,8 @@ function sanitizeKey(key) {
     let sanitizedKey = key
       .replace(/[^a-zA-Z0-9\s]/g, ' ') // 将标点符号转换为空格
       .trim()                          // 去除前后空格
-      .replace(/\s+/g, '_');          // 将连续空格转换为单个下划线
-    
+      .replace(/\s+/g, '_');           // 将连续空格转换为单个下划线
+
     console.log(`英文处理后: ${sanitizedKey}`);
     return sanitizedKey;
   }
@@ -43,7 +46,7 @@ function sanitizeKey(key) {
         sanitizedKeyParts.push(currentWord.trim());
         currentWord = '';
       }
-      
+
       // 获取拼音数组
       const pinyinArray = pinyin(char, { style: 'normal', segment: true });
       if (Array.isArray(pinyinArray) && pinyinArray.length > 0) {
@@ -55,7 +58,7 @@ function sanitizeKey(key) {
           }
           return '';
         }).join('');
-        
+
         sanitizedKeyParts.push(cleanPinyin);
       }
     } else if (/[a-zA-Z0-9]/.test(char)) {
@@ -97,6 +100,7 @@ function sanitizeKey(key) {
   return sanitizedKey;
 }
 
+// 修复无效键名
 function fixInvalidKeys(content) {
   const lines = content.split('\n');
   const fixedLines = lines.map(line => {
@@ -111,6 +115,7 @@ function fixInvalidKeys(content) {
   return fixedLines.join('\n');
 }
 
+// 修复 prompt 字段
 function fixPromptField(filePath) {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -123,13 +128,13 @@ function fixPromptField(filePath) {
       const section = data[sectionName];
 
       if ('name' in section && typeof section.name !== 'string') {
-        console.log(`修复无效的name字段: ${section.name}`);
+        console.log(`修复无效的 name 字段: ${section.name}`);
         section.name = String(section.name);
         fixed = true;
       }
 
       if ('description' in section && typeof section.description !== 'string') {
-        console.log(`修复无效的description字段: ${section.description}`);
+        console.log(`修复无效的 description 字段: ${section.description}`);
         section.description = String(section.description);
         fixed = true;
       }
@@ -137,11 +142,11 @@ function fixPromptField(filePath) {
       if ('prompt' in section) {
         let prompt = section.prompt;
         if (typeof prompt !== 'string') {
-          console.log(`修复无效的prompt字段: ${prompt}`);
+          console.log(`修复无效的 prompt 字段: ${prompt}`);
           section.prompt = `'''${String(prompt)}'''`;
           fixed = true;
         } else if (prompt.includes('\n') && !prompt.startsWith("'''")) {
-          console.log(`修复多行prompt字段: ${prompt}`);
+          console.log(`修复多行 prompt 字段: ${prompt}`);
           section.prompt = `'''${prompt}'''`;
           fixed = true;
         }
@@ -158,11 +163,12 @@ function fixPromptField(filePath) {
       return true;
     }
   } catch (error) {
-    console.error(`无法解析TOML文件: ${error.message}`);
+    console.error(`无法解析 TOML 文件: ${error.message}`);
     return false;
   }
 }
 
+// 校验并修复 TOML 文件
 function validateAndFixToml(filePath) {
   if (!fs.existsSync(filePath)) {
     console.error(`文件不存在: ${filePath}`);
@@ -182,7 +188,7 @@ function validateAndFixToml(filePath) {
       return false;
     }
 
-    // 如果文件有效，继续修复prompt字段
+    // 如果文件有效，继续修复 prompt 字段
     const promptFixed = fixPromptField(filePath);
 
     // 再次验证文件
@@ -191,7 +197,7 @@ function validateAndFixToml(filePath) {
       return false;
     }
 
-    console.log(`修改后的TOML文件有效，无需修复！`);
+    console.log(`修改后的 TOML 文件有效，无需修复！`);
     return promptFixed;
   } else {
     console.log(`文件已有效: ${filePath}`);
@@ -203,24 +209,9 @@ function validateAndFixToml(filePath) {
 const filePath = './src/prompts/prompts-gpts.toml';
 validateAndFixToml(filePath);
 
-// 添加新的验证函数
-export function validatePromptData(data) {
-  // 检查是否至少有一个文本字段
-  const hasText = data.prompt || data.text || data.description;
-  if (!hasText) {
-    throw new Error('必须提供提示词 (prompt/text/description)');
-  }
-
-  // 验证尺寸格式
-  if (data.size && !/^\d+x\d+$/.test(data.size)) {
-    throw new Error('尺寸格式无效，应为 "widthxheight"');
-  }
-
-  // 验证图片数量
-  const count = parseInt(String(data.n || data.count || 1));
-  if (isNaN(count) || count < 1 || count > 10) {
-    throw new Error('图片数量应在 1-10 之间');
-  }
-
-  return true;
-}
+// 导出函数（如果需要在其他地方使用）
+module.exports = {
+  validateAndFixToml,
+  isTomlFileValid,
+  fixPromptField,
+};

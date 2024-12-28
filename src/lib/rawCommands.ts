@@ -329,7 +329,7 @@ async function handleColoringBookHero2(
 
     result = `提示词：\n\`\`\`json\n${formatJsonString(
       promptObj
-    )}\n\`\`\`\n\n${processedImages.join("\n")}\n`;
+    )}\`\`\`\n\n${processedImages.join("\n")}\n`;
     if (insertBlock) {
       await logseq.Editor.updateBlock(insertBlock.uuid, result);
     }
@@ -431,7 +431,7 @@ async function handleColoringBookHero(
 
         const updatedContent = `段落${para.index + 1}\n${
           para.text
-        }\n【绘图需求】：${para.imagePrompt}\n${imageFileName}\n\n`;
+        }\n【绘图需求】：\n${para.imagePrompt}\n${imageFileName}\n\n`;
 
         contentSegments.set(para.index, updatedContent);
 
@@ -454,7 +454,7 @@ async function handleColoringBookHero(
       const errorResult = handleOpenAIError(error);
       const errorContent = `段落${para.index + 1}\n${
         para.text
-      }\n【绘图需求】：${para.imagePrompt}\n> Error: ${errorResult.error}\n\n`;
+      }\n【绘图需求】：\n${para.imagePrompt}\n> Error: ${errorResult.error}\n\n`;
 
       contentSegments.set(para.index, errorContent);
 

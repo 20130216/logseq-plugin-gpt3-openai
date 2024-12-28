@@ -431,7 +431,23 @@ async function handleColoringBookHero(
 
         const updatedContent = `段落${para.index + 1}\n${
           para.text
-        }\n【绘图需求】：\n${para.imagePrompt}\n${imageFileName}\n\n`;
+        }\n【绘图需求】：\n${
+          // 处理绘图需求中的列表项格式
+          para.imagePrompt
+            .split("\n")
+            .map((line) => {
+              const trimmedLine = line.trim();
+              // 如果是列表项，保持原有的双破折号格式
+              if (trimmedLine.startsWith("--")) {
+                return trimmedLine; // 保持原格式不变
+              } else if (trimmedLine.startsWith("-")) {
+                // 如果是单破折号，转换为双破折号
+                return `--${trimmedLine.slice(1).trim()}`;
+              }
+              return line;
+            })
+            .join("\n")
+        }\n${imageFileName}\n\n`;
 
         contentSegments.set(para.index, updatedContent);
 
@@ -454,7 +470,9 @@ async function handleColoringBookHero(
       const errorResult = handleOpenAIError(error);
       const errorContent = `段落${para.index + 1}\n${
         para.text
-      }\n【绘图需求】：\n${para.imagePrompt}\n> Error: ${errorResult.error}\n\n`;
+      }\n【绘图需求】：\n${para.imagePrompt}\n> Error: ${
+        errorResult.error
+      }\n\n`;
 
       contentSegments.set(para.index, errorContent);
 

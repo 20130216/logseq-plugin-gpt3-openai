@@ -119,3 +119,20 @@ export async function loadBuiltInGptsTomlCommands() {
     return [];
   }
 }
+
+// 添加风格一致性检查
+export class StyleConsistencyChecker {
+  private defaultStyle = "中国传统风格";
+
+  validateStyle(content: string) {
+    // 检查是否包含非预期的风格描述
+    const invalidStyles = ["西方中世纪风格", "欧洲风格", "现代风格"];
+
+    return !invalidStyles.some((style) => content.includes(style));
+  }
+
+  enforceStyle(content: string) {
+    // 强制使用默认风格
+    return content.replace(/请采用.*风格/g, `请采用${this.defaultStyle}`);
+  }
+}

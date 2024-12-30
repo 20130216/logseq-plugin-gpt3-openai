@@ -57,3 +57,25 @@ export class ResourceOptimizer {
     this.initialized = false;
   }
 }
+
+// 添加内容组织优化器
+export class ContentOrganizer {
+  reorganizeContent(content: string) {
+    const sections = content.split(/段落\d+/);
+    return sections
+      .map((section, index) => {
+        // 确保描述、需求和图片的正确顺序
+        const [description, requirement, image] = this.extractParts(section);
+        return `段落${index + 1}\n${description}\n${requirement}\n${image}`;
+      })
+      .join("\n\n");
+  }
+
+  private extractParts(section: string) {
+    // 提取并验证各个部分
+    const description = section.match(/.*?(?=【绘图需求】)/s)?.[0] || "";
+    const requirement = section.match(/【绘图需求】：.*?(?=!\[\])/s)?.[0] || "";
+    const image = section.match(/!\[\].*\.png\)/)?.[0] || "";
+    return [description, requirement, image];
+  }
+}

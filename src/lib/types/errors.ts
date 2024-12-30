@@ -101,6 +101,22 @@ export function handleOpenAIError(e: any) {
     return { error: e.error.message };
   }
 
+  // Billing 限制错误
+  if (e.message?.includes("Billing hard limit has been reached")) {
+    const message = "API 计费额度已达上限，请稍后重试或升级账户";
+    const requestId = e.message.match(/request id: (.*)\)/)?.[1] || "";
+    const detailedMessage = `${message}\n请求ID: ${requestId}\n\n建议:\n1. 等待额度重置\n2. 升级账户计划\n3. 检查账户设置`;
+
+    showMessage(detailedMessage, "error");
+    console.debug("Billing limit error:", { requestId, originalError: e });
+
+    return {
+      error: message,
+      status: 400,
+      type: "billing_limit",
+    };
+  }
+
   // 未知但有类型和消息的错误
   if (typeof e === "object" && e !== null && e.type && e.message) {
     showMessage(e.message, "error");

@@ -288,9 +288,13 @@ export function checkUserInput(input: string): CheckResult | void {
   }
 
   // 取所有唯一的敏感词
-  const extremeWords = [...new Set(Array.from(matches.extreme.values()).flat())];
+  const extremeWords = [
+    ...new Set(Array.from(matches.extreme.values()).flat()),
+  ];
   const mildWords = [...new Set(Array.from(matches.mild.values()).flat())];
-  const contextWords = [...new Set(Array.from(matches.context.values()).flat())];
+  const contextWords = [
+    ...new Set(Array.from(matches.context.values()).flat()),
+  ];
 
   // 1. 处理包含 extreme 词的情况
   if (extremeWords.length > 0) {
@@ -343,4 +347,18 @@ export function checkUserInput(input: string): CheckResult | void {
 
   // 5. 单个mild词（包括重复）或单个context词（包括重复）直接返回undefined
   return;
+}
+
+// 添加段落位置验证机制
+export class ParagraphValidator {
+  validateParagraphStructure(content: string) {
+    const paragraphs = content.split(/段落\d+/);
+    return paragraphs.every((p, index) => {
+      // 确保每个段落都在正确的位置
+      const expectedParagraphNum = index + 1;
+      const hasCorrectHeader = p.startsWith(`段落${expectedParagraphNum}`);
+      const hasCorrectImage = p.match(/!\[\]\(assets\/.*\/dalle-.*\.png\)/);
+      return hasCorrectHeader && hasCorrectImage;
+    });
+  }
 }

@@ -473,7 +473,7 @@ function trimLeadingWhitespace(text: string): string {
 // 1.异步处理：使用 async/await 语法使代码更洁、读。
 // 2.空值检查：增加了对 value 是否为 null 或 undefined 的检查，避免因空值导致的运行时错误。
 // 3.超时机制：增加了超时机制，防止长时间，提高系统的健壮性和用户体验。
-// 4.统一错误提示：无论错误的具体因是什么，都提供一个统一的用户友好的错��提示信息。
+// 4.统一错误提示：无论错误的具体因是什么，都提供一个统一的用户友好的错提示信息。
 
 export async function openAIWithStreamGptsID(
   input: string,
@@ -854,7 +854,7 @@ export async function openAIWithStreamGptsToml(
                             checkAndExtractImagePrompt(paragraph, false);
                           if (hasRequest) {
                             result +=
-                              paragraph + "\n为该段落绘图中，请稍��...\n";
+                              paragraph + "\n为该段落绘图中，请稍后...\n";
                             onContent(
                               paragraph + "\n为该段落绘图中，请稍后...\n"
                             );
@@ -1285,60 +1285,146 @@ async function encodeImageToBase64(imagePath: string): Promise<string> {
   }
 }
 
-// 添加重试机制和���选协议
-const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3) => {
-  for (let i = 0; i < maxRetries; i++) {
+// 定义重试配置接口
+interface RetryConfig {
+  maxRetries: number;
+  initialDelay: number;
+  maxDelay: number;
+  backoffFactor: number;
+}
+
+// 定义响应类型
+interface FetchResponse {
+  response: Response | null;
+  error?: Error;
+}
+
+// 默认重试配置
+const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  maxRetries: 3,
+  initialDelay: 3000,
+  maxDelay: 30000,
+  backoffFactor: 2,
+};
+
+/**
+ * 增强的重试机制
+ */
+const fetchWithRetry = async (
+  url: string,
+  options: RequestInit,
+  config: Partial<RetryConfig> = {}
+): Promise<Response> => {
+  const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
+  let currentDelay = retryConfig.initialDelay;
+
+  for (let attempt = 1; attempt <= retryConfig.maxRetries; attempt++) {
     try {
-      // 强制使用 HTTP/1.1
+      // 强制使用 HTTP/1.1，避免 QUIC 问题
       const newOptions = {
         ...options,
         headers: {
           ...options.headers,
-          'Downgrade-Insecure-Requests': '1',
-          'Connection': 'keep-alive'
-        }
+          "Downgrade-Insecure-Requests": "1",
+          Connection: "keep-alive",
+          "Accept-Encoding": "gzip, deflate",
+          "Cache-Control": "no-cache",
+          // 显式禁用 HTTP/2 和 HTTP/3
+          "Upgrade-Insecure-Requests": "0",
+        },
       };
-      
+
       const response = await fetch(url, newOptions);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+      // 检查响应状态
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       return response;
     } catch (error) {
-      if (i === maxRetries - 1) throw error;
-      // 等待一段时间后重试
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      console.error(`Attempt ${attempt} failed:`, error);
+
+      // 如果是最后一次尝试，抛出错误
+      if (attempt === retryConfig.maxRetries) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error occurred";
+
+        throw new Error(
+          `Failed after ${retryConfig.maxRetries} attempts: ${errorMessage}`
+        );
+      }
+
+      // 计算下一次重试的延迟时间
+      currentDelay = Math.min(
+        currentDelay * retryConfig.backoffFactor,
+        retryConfig.maxDelay
+      );
+
+      console.log(`Waiting ${currentDelay / 1000} seconds before retry...`);
+      await new Promise((resolve) => setTimeout(resolve, currentDelay));
     }
   }
+
+  // TypeScript 需要这个返回语句，虽然实际上永远不会执行到这里
+  throw new Error("Unexpected end of retry loop");
 };
 
-const getImage = async (url: string) => {
-  try {
-    // 首先尝试直接获取
-    const response = await fetchWithRetry(url, {});
-    if (response.ok) return response;
+/**
+ * 增强的图片获取函数
+ */
+export const getImage = async (url: string): Promise<Response> => {
+  const proxyUrls = [
+    url,
+    url.replace("dalle-proxy.jingjian.xyz", "your-backup-proxy.com"),
+    // 可以添加更多备用代理
+  ];
 
-    // 如果失败，尝试通过备用代理
-    const fallbackUrl = url.replace(
-      'dalle-proxy.jingjian.xyz',
-      'your-backup-proxy.com'
-    );
-    return await fetchWithRetry(fallbackUrl, {});
-  } catch (error) {
-    console.error('Image fetch failed:', error);
-    throw new Error('无法加载图片，请稍后重试');
+  let lastError: Error | undefined;
+
+  for (const proxyUrl of proxyUrls) {
+    try {
+      const response = await fetchWithRetry(
+        proxyUrl,
+        {},
+        {
+          maxRetries: 3,
+          initialDelay: 3000,
+        }
+      );
+      return response;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+
+      console.error(`Failed to fetch from ${proxyUrl}:`, errorMessage);
+      lastError = new Error(errorMessage);
+      continue;
+    }
   }
+
+  throw new Error(lastError?.message || "所有代理服务器均无法获取图片");
 };
 
-const encodeImageUrl = (url: string) => {
-  // 确保 URL 编码正确
+/**
+ * URL 编码工具函数
+ */
+export const encodeImageUrl = (url: string): string => {
   return encodeURIComponent(url)
-    .replace(/%2F/g, '/')
-    .replace(/%3A/g, ':')
-    .replace(/%3F/g, '?')
-    .replace(/%3D/g, '=')
-    .replace(/%26/g, '&');
+    .replace(/%2F/g, "/")
+    .replace(/%3A/g, ":")
+    .replace(/%3F/g, "?")
+    .replace(/%3D/g, "=")
+    .replace(/%26/g, "&");
 };
 
-const getProxyUrl = (originalUrl: string) => {
+/**
+ * 获取代理 URL
+ */
+export const getProxyUrl = (originalUrl: string): string => {
   const encodedUrl = encodeImageUrl(originalUrl);
   return `https://dalle-proxy.jingjian.xyz/proxy?url=${encodedUrl}`;
 };
+
+// 导出类型定义
+export type { RetryConfig, FetchResponse };

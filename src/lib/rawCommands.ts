@@ -921,11 +921,12 @@ function formatJsonString(jsonObj: any): string {
       .map((line: string) => line.trim())
       .join("\n    ");
 
-    return `{
+    // 使用 <pre> 标签包装 JSON 输出
+    return `<pre>{
   "prompt": "${formattedPrompt}",
   "size": "${jsonObj.size}",
   "n": ${jsonObj.n}
-}`;
+}</pre>`;
   }
   return JSON.stringify(jsonObj, null, 2);
 }

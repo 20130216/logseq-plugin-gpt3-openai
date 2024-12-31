@@ -36,11 +36,19 @@ export class JSONParseError extends Error {
 }
 
 export function handleOpenAIError(e: any) {
+  // 在现有错误处理逻辑前添加安全系统错误检查
+  if (e.message?.includes("safety system")) {
+    const message =
+      "由于安全系统的限制，您的请求被拒绝。提示词中可能包含不被允许的内容。请修改后重试。";
+    showMessage(message, "warning");
+    return { error: message };
+  }
+
   // JSON 解析错误处理
   if (e instanceof JSONParseError) {
     const message = "提示词格式错误: " + (e.message || "请检查命令模板");
     showMessage(message, "warning");
-    console.debug("JSON 解析错误详���:", {
+    console.debug("JSON 解析错误详情:", {
       message: e.message,
       jsonString: e.jsonString,
       stack: e.stack,

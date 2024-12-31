@@ -562,7 +562,7 @@ async function parseAndValidateJSON(jsonString: string): Promise<any> {
 function buildImagePrompts(finalPromptText: string, size: string, n: number) {
   return Array.from({ length: n }, (_, i) => {
     const sceneIndex = i + 1;
-    const fullPrompt = `${finalPromptText}当前指令：绘制第${sceneIndex}幅场景`;
+    const fullPrompt = `${finalPromptText}当前指令：绘制第${sceneIndex}幅子场景`;
 
     console.log(
       `\n准备第${sceneIndex}幅场景的提示词：\n`,
@@ -780,7 +780,9 @@ async function processImagesSequentially(
         result.error
       );
       const error = new Error(
-        result.error || `第 ${result.index + 1} 张图片生成失败`
+        result.error?.includes("safety system")
+          ? "由于安全系统的限制，您的请求被拒绝。提示词中可能包含不被允许的内容。请修改后重试。"
+          : result.error || `第 ${result.index + 1} 张图片生成失败`
       );
       const errorResult = handleOpenAIError(error);
       processedImages[result.index] = `\n${errorResult.error}\n`;
@@ -883,39 +885,48 @@ export async function runReadImageURL(b: IHookEvent) {
 
 // 添加格式化 JSON 的函数
 function formatJsonString(jsonObj: any): string {
-  // 特殊处理 prompt 字段
   if (jsonObj.prompt) {
-    // 添加段落分隔并确保换行符被保留
     const formattedPrompt = jsonObj.prompt
-      // 先统一换行符
       .replace(/\r\n/g, "\n")
-      // 在主要段落前添加换行
+      // 确保"角色特征："前有换行，并处理角色描述格式
       .replace(
-        /(故事背景|场景展示|绘图风格|角色特征|核心场景|背景)：/g,
-        "\n$1："
+        /(.*?)(角色特征：)([^]*?)(子场景)/g,
+        (
+          _: string,
+          prefix: string,
+          start: string,
+          content: string,
+          end: string
+        ): string => {
+          // 1. 移除内容开头的空白
+          const trimmedContent = content.trim();
+          // 2. 处理角色描述，确保每行正确缩进
+          const formattedContent = trimmedContent
+            .split("--")
+            .map((item: string): string =>
+              item.trim() ? `    --${item.trim()}` : ""
+            )
+            .filter(Boolean)
+            .join("\n");
+          // 3. 确保前缀内容后有换行，移除子场景前的多余换行
+          return `${prefix}\n${start}\n${formattedContent}\n${end}`;
+        }
       )
-      // 在角色描述前添加换行
-      .replace(/( - [^，。：]+)：/g, "\n$1")
-      // 在子场景添加行
+      // 其他格式化保持不变
+      .replace(/(故事背景|场景展示|绘图风格|核心场景|背景)：/g, "\n$1：")
       .replace(/(第[一二三四五六七八九十]幅)/g, "\n$1")
-      // 确保段落之间有足够空行
       .replace(/\n\n+/g, "\n\n")
-      // 移除开头的空行
       .replace(/^\n+/, "")
-      // 确保行前面有适当的缩进
       .split("\n")
       .map((line: string) => line.trim())
-      .join("\n    "); // 4个空格的缩进
+      .join("\n    ");
 
-    // 创建格式化的 JSON 字符串
     return `{
   "prompt": "${formattedPrompt}",
   "size": "${jsonObj.size}",
   "n": ${jsonObj.n}
 }`;
   }
-
-  // 如果没有 prompt 字段，使用普通格式化
   return JSON.stringify(jsonObj, null, 2);
 }
 

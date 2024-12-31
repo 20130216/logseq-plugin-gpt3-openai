@@ -562,7 +562,6 @@ function buildImagePrompts(finalPromptText: string, size: string, n: number) {
   return Array.from({ length: n }, (_, i) => {
     const sceneIndex = i + 1;
 
-    // 提取当前场景的内容
     const extractSceneContent = (text: string, index: number): string => {
       // 提取通用内容（故事背景和角色特征）
       const commonContent = text.split(/第[一二三四五六七八九十]幅/)[0].trim();
@@ -571,7 +570,6 @@ function buildImagePrompts(finalPromptText: string, size: string, n: number) {
       const sceneMarker = `第${
         ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"][index - 1]
       }幅`;
-      // 使用正则表达式提取当前场景
       const sceneRegex = new RegExp(
         `${sceneMarker}([^]*?)(?=第[一二三四五六七八九十]幅|$)`
       );
@@ -579,11 +577,15 @@ function buildImagePrompts(finalPromptText: string, size: string, n: number) {
       const currentScene = match ? match[1].trim() : "";
 
       // 组合最终内容
-      return `${commonContent}\n${sceneMarker}\n${currentScene}`;
+      return `${commonContent}\n\n核心绘图内容：\n${sceneMarker}\n${currentScene}`;
     };
 
     const sceneContent = extractSceneContent(finalPromptText, sceneIndex);
-    const fullPrompt = `${sceneContent}当前指令：绘制第${sceneIndex}幅子场景`;
+    const fullPrompt = `${sceneContent}\n\n绘图要求：
+    • 仅绘制当前子场景中提到的角色
+    • 其他角色特征仅供参考，未提及则忽略
+    
+    当前指令：聚焦绘制第${sceneIndex}幅子场景`;
 
     return {
       prompt: fullPrompt,

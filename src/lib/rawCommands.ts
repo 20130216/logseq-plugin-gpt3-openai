@@ -261,6 +261,11 @@ async function handleColoringBookHero2(
   openAISettings: OpenAIOptions
 ) {
   try {
+    // 检查提示词长度
+    if (jsonString.length > 2000) {
+      throw new Error("prompt_length_exceeded");
+    }
+
     // 清理 JSON 字符串中的特殊字符
     jsonString = jsonString
       .replace(/[\x00-\x1F\x7F-\x9F]/g, "")
@@ -312,12 +317,6 @@ async function handleColoringBookHero2(
 
     // 构建所有图片的提示词
     const imagePrompts = buildImagePrompts(finalPromptText, size, n);
-
-    // 初始显示 JSON 文档
-    result = `提示词：\n\`\`\`json\n${formatJsonString(promptObj)}\n\`\`\`\n`;
-    if (insertBlock) {
-      await logseq.Editor.updateBlock(insertBlock.uuid, result);
-    }
 
     // 处理图片并更新结果
     const processedImages = await processImagesSequentially(
@@ -562,20 +561,29 @@ async function parseAndValidateJSON(jsonString: string): Promise<any> {
 function buildImagePrompts(finalPromptText: string, size: string, n: number) {
   return Array.from({ length: n }, (_, i) => {
     const sceneIndex = i + 1;
-    const fullPrompt = `${finalPromptText}当前指令：绘制第${sceneIndex}幅子场景`;
 
-    console.log(
-      `\n准备第${sceneIndex}幅场景的提示词：\n`,
-      JSON.stringify(
-        {
-          prompt: fullPrompt,
-          size,
-          n: 1,
-        },
-        null,
-        2
-      )
-    );
+    // 提取当前场景的内容
+    const extractSceneContent = (text: string, index: number): string => {
+      // 提取通用内容（故事背景和角色特征）
+      const commonContent = text.split(/第[一二三四五六七八九十]幅/)[0].trim();
+
+      // 提取当前场景内容
+      const sceneMarker = `第${
+        ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"][index - 1]
+      }幅`;
+      // 使用正则表达式提取当前场景
+      const sceneRegex = new RegExp(
+        `${sceneMarker}([^]*?)(?=第[一二三四五六七八九十]幅|$)`
+      );
+      const match = text.match(sceneRegex);
+      const currentScene = match ? match[1].trim() : "";
+
+      // 组合最终内容
+      return `${commonContent}\n${sceneMarker}\n${currentScene}`;
+    };
+
+    const sceneContent = extractSceneContent(finalPromptText, sceneIndex);
+    const fullPrompt = `${sceneContent}当前指令：绘制第${sceneIndex}幅子场景`;
 
     return {
       prompt: fullPrompt,

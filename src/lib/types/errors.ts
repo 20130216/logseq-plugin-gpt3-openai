@@ -253,4 +253,15 @@ export function handleOpenAIError(e: any) {
     showMessage("API 响应异常，请重试", "error");
     return { error: "API 响应异常" };
   }
+
+  // 添加提示词长度超限的处理
+  if (e.message?.includes("prompt_length_exceeded")) {
+    const message =
+      "提示词过长：当前输入超过2000字符。请精简描述以确保最终生成的图片提示词能符合API对输入字符在1000字符的限制。";
+    showMessage(message, "warning");
+    return {
+      error: message,
+      type: "prompt_length_exceeded",
+    };
+  }
 }

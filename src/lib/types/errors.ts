@@ -79,6 +79,60 @@ export function handleOpenAIError(e: any) {
     };
   }
 
+  // 新增：处理 JSON 解析相关错误
+  if (e instanceof Error) {
+    // JSON 解析基础错误
+    if (e.message === "json_parse_error") {
+      const message = "提示词格式错误：JSON 解析失败，请检查格式是否正确。";
+      showMessage(message, "warning");
+      return {
+        error: message,
+        type: "json_parse_error",
+      };
+    }
+
+    // JSON 语法错误
+    if (e.message.includes("Expected ',' or '}'")) {
+      const message = "提示词格式错误：JSON 结构不完整，缺少逗号或结束括号。";
+      showMessage(message, "warning");
+      return {
+        error: message,
+        type: "json_syntax_error",
+      };
+    }
+
+    // JSON 不完整错误
+    if (e.message.includes("Unexpected end of JSON input")) {
+      const message =
+        "提示词格式错误：JSON 结构不完整，请确保所有括号都正确闭合。";
+      showMessage(message, "warning");
+      return {
+        error: message,
+        type: "json_incomplete_error",
+      };
+    }
+
+    // JSON 非法字符错误
+    if (e.message.includes("Unexpected token")) {
+      const message = "提示词格式错误：JSON 中包含非法字符，请检查格式。";
+      showMessage(message, "warning");
+      return {
+        error: message,
+        type: "json_token_error",
+      };
+    }
+
+    // JSON 特殊字符错误
+    if (e.message.includes("Invalid or unexpected token")) {
+      const message = "提示词格式错误：JSON 中包含特殊字符，请使用标准字符。";
+      showMessage(message, "warning");
+      return {
+        error: message,
+        type: "json_invalid_char_error",
+      };
+    }
+  }
+
   // 处理 JSON 相关错误
   if (e instanceof Error) {
     switch (e.message) {

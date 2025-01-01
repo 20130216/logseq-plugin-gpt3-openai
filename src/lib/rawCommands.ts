@@ -514,18 +514,70 @@ async function handleColoringBookHero(
 // JSON 解析和验证的辅助函数
 async function parseAndValidateJSON(jsonString: string): Promise<any> {
   try {
-    return JSON.parse(jsonString);
-  } catch (firstError) {
+    console.debug("原始输入:", jsonString);
+
+    // 第一步：标准化处理
+    let preprocessed = jsonString
+      // 移除 BOM 和不可见字符
+      .replace(/^\uFEFF/, "")
+      .replace(/[\x00-\x1F\x7F-\x9F]/g, "")
+      // 标准化空白字符
+      .replace(/\s+/g, " ")
+      .trim();
+
+    // 第二步：特殊字符预处理
+    preprocessed = preprocessed
+      // 处理省略号（包括中文、日文和连续的点）
+      .replace(/[…．．．...]{1,}/g, "...")
+      // 处理引号
+      .replace(/[""]/g, '"')
+      .replace(/['']/g, "'");
+
+    console.debug("基础预处理后:", preprocessed);
+
     try {
+      return JSON.parse(preprocessed);
+    } catch (firstError) {
+      console.debug("基础预处理解析失败，进行深度修复");
+
+      // 第三步：深度修复
+      let fixedJson = preprocessed;
+
+      // 处理 prompt 字段
+      if (fixedJson.includes('"prompt"')) {
+        const promptRegex = /"prompt"\s*:\s*"([^"]*)"/;
+        const match = fixedJson.match(promptRegex);
+
+        if (match) {
+          const originalPrompt = match[1];
+          const cleanPrompt = originalPrompt
+            // 转义特殊字符
+            .replace(/\\/g, "\\\\")
+            .replace(/"/g, '\\"')
+            .replace(/\n/g, "\\n")
+            .replace(/\t/g, "\\t")
+            // 处理省略号
+            .replace(/…/g, "...")
+            .replace(/．{3,}/g, "...")
+            .replace(/\.{3,}/g, "...")
+            // 移除可能导致问题的不可见字符
+            .replace(/[\u200B-\u200D\uFEFF]/g, "")
+            // 处理其他特殊字符
+            .replace(/[^\x20-\x7E\u4E00-\u9FFF]/g, "");
+
+          fixedJson = fixedJson.replace(
+            promptRegex,
+            `"prompt":"${cleanPrompt}"`
+          );
+        }
+      }
+
       // 修复常见的 JSON 格式问题
-      jsonString = jsonString
-        // 修复键名中的多余空格
-        .replace(/([{,]\s*)([^"{\s][^:]*?)\s*:/g, '$1"$2":')
-        // 修复值中的格式问题
-        .replace(/:\s*([^",{\[\s][^,}\]]*)/g, ':"$1"')
+      fixedJson = fixedJson
+        // 修复数字值
+        .replace(/"n"\s*:\s*"(\d+)"/g, '"n":$1')
         // 修复尺寸格式
         .replace(/"size"\s*:\s*"([^"]+)"/g, (_match, size) => {
-          // 标准化尺寸格式
           const validSizes = [
             "256x256",
             "512x512",
@@ -533,44 +585,45 @@ async function parseAndValidateJSON(jsonString: string): Promise<any> {
             "1024x1792",
             "1792x1024",
           ];
-          size = size.replace(/\s+/g, ""); // 移除空格
-
-          // 处理简写形式
-          if (size.match(/^\d+$/)) {
-            size = `${size}x${size}`;
-          }
-
-          // 验证尺寸是否有效
-          if (!validSizes.includes(size)) {
-            size = "1024x1024"; // 默认尺寸
-          }
-
-          return `"size":"${size}"`;
+          size = size.replace(/\s+/g, "");
+          return validSizes.includes(size)
+            ? `"size":"${size}"`
+            : `"size":"1024x1024"`;
         })
-        // 修复数字格式
-        .replace(/"n"\s*:\s*"(\d+)"/g, '"n":$1')
-        // 清理多余的逗号
+        // 清理多余的逗号和空格
         .replace(/,\s*([}\]])/g, "$1")
-        // 修复重复的引号
-        .replace(/"([^"]*)""/g, '"$1"');
+        .replace(/([{,])\s+/g, "$1")
+        .replace(/\s+([}])/g, "$1");
 
-      console.debug("修复后的 JSON 字符串:", jsonString);
-      return JSON.parse(jsonString);
-    } catch (secondError) {
-      console.error("JSON 解析详情:", {
-        originalString: jsonString,
-        firstError,
-        secondError,
-        cleanedString: jsonString,
-      });
+      console.debug("深度修复后:", fixedJson);
 
-      const errorMessage =
-        secondError instanceof Error
-          ? secondError.message
-          : "未知的 JSON 格式错误";
+      try {
+        const parsed = JSON.parse(fixedJson);
+        console.debug("成功解析:", parsed);
+        return parsed;
+      } catch (secondError) {
+        // 收集错误信息
+        const errorContext = {
+          original: jsonString,
+          preprocessed,
+          fixed: fixedJson,
+          firstError,
+          secondError,
+        };
+        console.debug("JSON 解析失败上下文:", errorContext);
 
-      throw new JSONParseError(`JSON 格式错误: ${errorMessage}`, jsonString);
+        // 使用 JSONParseError 抛出错误
+        throw new JSONParseError(
+          secondError instanceof Error
+            ? secondError.message
+            : "未知的 JSON 解析错误",
+          fixedJson
+        );
+      }
     }
+  } catch (error) {
+    // 统一交给 handleOpenAIError 处理
+    throw handleOpenAIError(error);
   }
 }
 

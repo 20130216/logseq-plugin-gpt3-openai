@@ -221,9 +221,13 @@ export async function getImageUrlFromBlock(
   console.log("No matches found.");
   return null;
 }
-export const showMessage = (
-  message: string,
-  status: "success" | "warning" | "error" = "success"
-) => {
-  logseq.UI.showMsg(message, status);
-};
+
+export function showMessage(
+  content: string,
+  type: "success" | "warning" | "error" = "success"
+) {
+  // 对于警告和错误消息，设置超时为 0（永不超时）
+  // 对于成功消息，使用默认超时
+  const options = type === "success" ? undefined : { timeout: 0 };
+  logseq.UI.showMsg(content, type, options);
+}

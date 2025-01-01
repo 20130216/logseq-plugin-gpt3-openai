@@ -36,6 +36,65 @@ export class JSONParseError extends Error {
 }
 
 export function handleOpenAIError(e: any) {
+  // 处理 token 限制错误
+  if (
+    e.message?.includes("maximum context length") ||
+    e.message?.includes("max_tokens") ||
+    e.message?.includes("maximum tokens") ||
+    e.message?.startsWith("maximum_tokens_") ||
+    e.name === "MaxTokensExceeded"
+  ) {
+    // 从错误消息中提取实际的 maxTokens 值
+    const actualMaxTokens = e.message?.startsWith("maximum_tokens_")
+      ? Number(e.message.split("_")[2])
+      : Number(logseq.settings?.["openAIMaxTokens"]) || 4000;
+
+    const suggestedTokens = Math.min(actualMaxTokens * 2, 128000);
+
+    // 构建更详细的错误消息
+    const message =
+      `⚠️ 响应已中断：达到最大令牌数限制（${actualMaxTokens}）\n\n` +
+      `原因：当前响应长度超过了设置的最大令牌数限制（${actualMaxTokens}）。\n\n` +
+      `建议操作：\n` +
+      `1. 在插件设置中找到"最大令牌数"选项\n` +
+      `2. 建议将其值增加到 ${suggestedTokens}\n` +
+      `3. 对于复杂描述（如"八仙过海"），建议设置为 8000\n` +
+      `4. 设置完成后重新执行命令\n\n` +
+      `提示：\n` +
+      `- 当前模型（gpt-4o-mini）支持最大 128k tokens\n` +
+      `- 已显示部分内容仅为不完整响应\n\n` +
+      `[点击此消息关闭]`;
+
+    // 使用更醒目的警告样式
+    showMessage(message, "warning");
+
+    return {
+      error: message,
+      type: "max_tokens_exceeded",
+      details: {
+        currentLimit: actualMaxTokens,
+        suggested: suggestedTokens,
+        isPartialResponse: true,
+      },
+    };
+  }
+
+  // 处理 JSON 相关错误
+  if (e instanceof Error) {
+    switch (e.message) {
+      case "incomplete_json":
+        showMessage("JSON 响应不完整，请重试", "warning");
+        return { error: "JSON 响应不完整", type: "incomplete_json" };
+      case "empty_prompt":
+        showMessage("提示词不能为空", "error");
+        return { error: "提示词不能为空", type: "empty_prompt" };
+      case "prompt_length_exceeded":
+        const message = "提示词长度超过限制（3000字符），请精简描述";
+        showMessage(message, "warning");
+        return { error: message, type: "prompt_length_exceeded" };
+    }
+  }
+
   // 在现有错误处理逻辑前添加安全系统错误检查
   if (e.message?.includes("safety system")) {
     const message =
@@ -257,7 +316,7 @@ export function handleOpenAIError(e: any) {
   // 添加提示词长度超限的处理
   if (e.message?.includes("prompt_length_exceeded")) {
     const message =
-      "提示词过长：当前输入超过2000字符。请精简描述以确保最终生成的图片提示词能符合API对输入字符在1000字符的限制。";
+      "提示词过长：当前输入超过4000字符。请精简描述以确保最终生成的图片提示词能符合API对输入字符在1000字符的限制。";
     showMessage(message, "warning");
     return {
       error: message,

@@ -261,8 +261,8 @@ async function handleColoringBookHero2(
   openAISettings: OpenAIOptions
 ) {
   try {
-    // 检查提示词长度
-    if (jsonString.length > 2000) {
+    // 修改字符限制为3000
+    if (jsonString.length > 3000) {
       throw new Error("prompt_length_exceeded");
     }
 
@@ -276,12 +276,20 @@ async function handleColoringBookHero2(
       .replace(/"\\?"([^"]+)\\?""\s*:/g, '"$1":')
       .trim();
 
+    // 处理不完整的 JSON
+    if (!jsonString.endsWith("}")) {
+      // 尝试找到最后一个完整的属性
+      const lastValidProp = jsonString.lastIndexOf('",');
+      if (lastValidProp !== -1) {
+        jsonString = jsonString.substring(0, lastValidProp + 1) + '"}';
+      } else {
+        throw new Error("incomplete_json");
+      }
+    }
+
     // 确保是有效的 JSON 对象格式
     if (!jsonString.startsWith("{")) {
       jsonString = "{" + jsonString;
-    }
-    if (!jsonString.endsWith("}")) {
-      jsonString = jsonString + "}";
     }
 
     // 尝试解析 JSON
@@ -294,7 +302,7 @@ async function handleColoringBookHero2(
       jsonData.description?.toString().trim();
 
     if (!promptText) {
-      throw new JSONParseError("提示词不能为空", jsonString);
+      throw new Error("empty_prompt");
     }
 
     // 构建标准化的对象
@@ -334,12 +342,21 @@ async function handleColoringBookHero2(
     }
 
     return result;
-  } catch (parseError) {
-    console.error("JSON 解析错误:", parseError);
-    throw new JSONParseError(
-      parseError instanceof Error ? parseError.message : "未知的 JSON 解析错误",
-      jsonString
-    );
+  } catch (error: unknown) {
+    const errorResult = handleOpenAIError(error);
+
+    // 根据错误类型处理特殊情况
+    if (errorResult.type === "incomplete_json") {
+      return result;
+    }
+
+    // 处理 token 限制错误
+    if (errorResult.type === "max_tokens_exceeded") {
+      throw new Error(errorResult.error);
+    }
+
+    // 其他错误直接抛出
+    throw new Error(errorResult.error);
   }
 }
 

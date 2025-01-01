@@ -39,7 +39,7 @@ const OpenAIDefaults = (apiKey: string): OpenAIOptions => ({
   apiKey,
   completionEngine: "gpt-4o-mini",
   temperature: 1.0,
-  maxTokens: 1000,
+  maxTokens: 4000,
   dalleImageSize: "1024",
   dalleModel: "dall-e-3",
   dalleQuality: "standard",
@@ -805,72 +805,107 @@ export async function openAIWithStreamGptsToml(
           .getReader();
         let result = "";
         let currentParagraph = "";
+        let tokenCount = 0;
+        const maxTokens = Number(options.maxTokens) || 4000;
 
         const readStream = async (): Promise<any> => {
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) {
-              reader.cancel();
-              if (currentParagraph.trim()) {
-                console.log(
-                  "来自openAIWithStreamGptsToml函数中的完整提示词如下:",
-                  currentParagraph
-                );
-                const { hasRequest, prompt } = checkAndExtractImagePrompt(
-                  currentParagraph.trim(),
-                  true
-                );
-                if (hasRequest) {
-                  result += currentParagraph + "\n为该段落绘图中，请稍后...\n";
-                  onContent(currentParagraph + "\n为该段落绘图中，请稍后...\n");
-                  onImagePrompt(prompt);
-                } else {
-                  result += currentParagraph;
-                  onContent(currentParagraph);
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) {
+                reader.cancel();
+                if (currentParagraph.trim()) {
+                  console.log(
+                    "来自openAIWithStreamGptsToml函数中的完整提示词如下:",
+                    currentParagraph
+                  );
+                  const { hasRequest, prompt } = checkAndExtractImagePrompt(
+                    currentParagraph.trim(),
+                    true
+                  );
+                  if (hasRequest) {
+                    result +=
+                      currentParagraph + "\n为该段落绘图中，请稍后...\n";
+                    onContent(
+                      currentParagraph + "\n为该段落绘图中，请稍后...\n"
+                    );
+                    onImagePrompt(prompt);
+                  } else {
+                    result += currentParagraph;
+                    onContent(currentParagraph);
+                  }
                 }
+                onStop();
+                return result;
               }
-              onStop();
-              return result;
-            }
 
-            if (value) {
-              const data = getDataFromStreamValue(value);
-              if (data && data.length > 0) {
-                for (const item of data) {
-                  if (item.choices[0]?.delta?.content) {
-                    const content = item.choices[0].delta.content;
-                    currentParagraph += content;
+              if (value) {
+                const data = getDataFromStreamValue(value);
+                if (data && data.length > 0) {
+                  for (const item of data) {
+                    if (item.choices[0]?.delta?.content) {
+                      const content = item.choices[0].delta.content;
+                      // 更精确的 token 计数（考虑中文字符）
+                      const tokenEstimate = content
+                        .split("")
+                        .reduce((count: number, char: string) => {
+                          return (
+                            count + (/[\u4e00-\u9fa5]/.test(char) ? 2 : 0.5)
+                          );
+                        }, 0);
+                      tokenCount += Math.ceil(tokenEstimate);
 
-                    if (
-                      content.includes("\n\n") ||
-                      content.includes("\n### ")
-                    ) {
-                      const paragraphs = currentParagraph.split(/\n\n|\n### /);
-                      for (let i = 0; i < paragraphs.length - 1; i++) {
-                        const paragraph = paragraphs[i].trim();
-                        if (paragraph) {
-                          console.log("完整段落:", paragraph);
-                          const { hasRequest, prompt } =
-                            checkAndExtractImagePrompt(paragraph, false);
-                          if (hasRequest) {
-                            result +=
-                              paragraph + "\n为该段落绘图中，请稍后...\n";
-                            onContent(
-                              paragraph + "\n为该段落绘图中，请稍后...\n"
-                            );
-                            onImagePrompt(prompt);
-                          } else {
-                            result += paragraph + "\n\n";
-                            onContent(paragraph + "\n\n");
+                      // 提前检查 token 限制
+                      if (tokenCount >= maxTokens * 0.95) {
+                        reader.cancel();
+                        onStop();
+                        // 确保当前内容被显示
+                        if (currentParagraph.trim()) {
+                          result += currentParagraph;
+                          onContent(currentParagraph);
+                        }
+                        const error = new Error(`maximum_tokens_${maxTokens}`);
+                        error.name = "MaxTokensExceeded";
+                        throw error; // 使用 throw 确保错误被正确捕获
+                      }
+
+                      currentParagraph += content;
+
+                      if (
+                        content.includes("\n\n") ||
+                        content.includes("\n### ")
+                      ) {
+                        const paragraphs =
+                          currentParagraph.split(/\n\n|\n### /);
+                        for (let i = 0; i < paragraphs.length - 1; i++) {
+                          const paragraph = paragraphs[i].trim();
+                          if (paragraph) {
+                            console.log("完整段落:", paragraph);
+                            const { hasRequest, prompt } =
+                              checkAndExtractImagePrompt(paragraph, false);
+                            if (hasRequest) {
+                              result +=
+                                paragraph + "\n为该段落绘图中，请稍后...\n";
+                              onContent(
+                                paragraph + "\n为该段落绘图中，请稍后...\n"
+                              );
+                              onImagePrompt(prompt);
+                            } else {
+                              result += paragraph + "\n\n";
+                              onContent(paragraph + "\n\n");
+                            }
                           }
                         }
+                        currentParagraph = paragraphs[paragraphs.length - 1];
                       }
-                      currentParagraph = paragraphs[paragraphs.length - 1];
                     }
                   }
                 }
               }
             }
+          } catch (error) {
+            reader.cancel();
+            throw error;
           }
         };
 
@@ -889,9 +924,8 @@ export async function openAIWithStreamGptsToml(
     if (error.type || error.silent) {
       throw error;
     }
-    // 其他未知错误才显示通用错误消息
-    console.error("Error in openAIWithStreamGptsToml:", error);
-    throw new Error("发生未知错误，请检查控制台日志并稍后重试");
+    // 其他错误通过 handleOpenAIError 处理
+    return handleOpenAIError(error);
   }
 }
 

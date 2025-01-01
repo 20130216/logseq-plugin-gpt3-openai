@@ -266,11 +266,11 @@ async function handleColoringBookHero2(
       throw new Error("prompt_length_exceeded");
     }
 
-    // 清理 JSON 字符串中的特殊字符
+    // 清理 JSON 字符串中的特殊字符，但保留换行符
     jsonString = jsonString
-      .replace(/[\x00-\x1F\x7F-\x9F]/g, "")
-      .replace(/[\r\n\t]/g, " ")
-      .replace(/\s+/g, " ")
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "")
+      .replace(/\t/g, "  ") // 将制表符转换为空格
+      .replace(/\s*\n\s*/g, "\n") // 规范化换行
       .replace(/\\"/g, '"')
       .replace(/"{2,}/g, '"')
       .replace(/"\\?"([^"]+)\\?""\s*:/g, '"$1":')
@@ -315,10 +315,10 @@ async function handleColoringBookHero2(
     const { prompt: finalPromptText, size, n } = promptObj;
     console.log(`计划生成 ${n} 幅图片`);
 
-    // 显示初始 JSON 文档
-    result = `提示词：\n\`\`\`json\n${formatJsonString(
+    // 显示初始 JSON 文档，使用 pre 标签保持格式
+    result = `提示词：\n<pre>${formatJsonString(
       promptObj
-    )}\n\`\`\`\n\n准备生成 ${n} 幅图片...\n`;
+    )}</pre>\n\n准备生成 ${n} 幅图片...\n`;
     if (insertBlock) {
       await logseq.Editor.updateBlock(insertBlock.uuid, result);
     }
@@ -334,9 +334,9 @@ async function handleColoringBookHero2(
       result
     );
 
-    result = `提示词：\n\`\`\`json\n${formatJsonString(
+    result = `提示词：\n<pre>${formatJsonString(
       promptObj
-    )}\`\`\`\n\n${processedImages.join("\n")}\n`;
+    )}</pre>\n\n${processedImages.join("\n")}\n`;
     if (insertBlock) {
       await logseq.Editor.updateBlock(insertBlock.uuid, result);
     }
@@ -531,7 +531,11 @@ async function parseAndValidateJSON(jsonString: string): Promise<any> {
       .replace(/[…．．．...]{1,}/g, "...")
       // 处理引号
       .replace(/[""]/g, '"')
-      .replace(/['']/g, "'");
+      .replace(/['']/g, "'")
+      // 修复属性名后的引号和冒号
+      .replace(/([,{])\s*([^"}\s]+)\s*:/g, '$1"$2":')
+      // 修复值前后的引号
+      .replace(/:\s*([^",\s{}[\]]+)([,}])/g, ':"$1"$2');
 
     console.debug("基础预处理后:", preprocessed);
 
@@ -590,6 +594,10 @@ async function parseAndValidateJSON(jsonString: string): Promise<any> {
             ? `"size":"${size}"`
             : `"size":"1024x1024"`;
         })
+        // 修复属性名的引号
+        .replace(/([,{])\s*([^"}\s]+)\s*:/g, '$1"$2":')
+        // 修复属性值的引号
+        .replace(/:\s*([^",\s{}[\]]+)([,}])/g, ':"$1"$2')
         // 清理多余的逗号和空格
         .replace(/,\s*([}\]])/g, "$1")
         .replace(/([{,])\s+/g, "$1")
@@ -966,47 +974,80 @@ export async function runReadImageURL(b: IHookEvent) {
 // 添加格式化 JSON 的函数
 function formatJsonString(jsonObj: any): string {
   if (jsonObj.prompt) {
-    const formattedPrompt = jsonObj.prompt
-      .replace(/\r\n/g, "\n")
-      // 确保"角色特征："前有换行，并处理角色描述格式
-      .replace(
-        /(.*?)(角色特征：)([^]*?)(子场景)/g,
-        (
-          _: string,
-          prefix: string,
-          start: string,
-          content: string,
-          end: string
-        ): string => {
-          // 1. 移除内容开头的空白
-          const trimmedContent = content.trim();
-          // 2. 处理角色描述，确保每行正确缩进
-          const formattedContent = trimmedContent
-            .split("--")
-            .map((item: string): string =>
-              item.trim() ? `    --${item.trim()}` : ""
-            )
-            .filter(Boolean)
-            .join("\n");
-          // 3. 确保前缀内容后有换行，移除子场景前的多余换行
-          return `${prefix}\n${start}\n${formattedContent}\n${end}`;
-        }
-      )
-      // 其他格式化保持不变
+    // 首先处理原始文本，确保换行符统一
+    let formattedPrompt = jsonObj.prompt.replace(/\r\n/g, "\n");
+
+    // 处理角色特征部分
+    formattedPrompt = formattedPrompt.replace(
+      /(.*?)(角色特征：)([^]*?)(子场景)/g,
+      (
+        _: string,
+        prefix: string,
+        start: string,
+        content: string,
+        end: string
+      ): string => {
+        // 1. 移除内容开头的空白
+        const trimmedContent = content.trim();
+
+        // 2. 处理角色描述，确保每个角色和其属性正确格式化
+        const formattedContent = trimmedContent
+          .split(/--(?=[^:]+：)/) // 只在角色名前分割
+          .map((characterBlock: string): string => {
+            if (!characterBlock.trim()) return "";
+
+            // 处理每个角色块
+            const lines = characterBlock.trim().split(/\n+/);
+            const characterName = lines[0];
+
+            // 将剩余的行作为属性处理
+            const attributes = lines
+              .slice(1)
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .join("");
+
+            // 在每个属性之间添加空格
+            const formattedAttributes = attributes
+              .split(/(?=[^：]+：)/)
+              .filter(Boolean)
+              .map((attr) => attr.trim())
+              .join(" ");
+
+            // 确保角色名前有--，直接连接属性
+            return `--${characterName} ${formattedAttributes}`;
+          })
+          .filter(Boolean)
+          .join("\n"); // 角色之间用换行分隔
+
+        // 3. 确保前缀内容后有换行，移除子场景前的多余换行
+        return `${prefix}\n${start}\n${formattedContent}\n${end}`;
+      }
+    );
+
+    // 其他格式化处理
+    formattedPrompt = formattedPrompt
       .replace(/(故事背景|场景展示|绘图风格|核心场景|背景)：/g, "\n$1：")
       .replace(/(第[一二三四五六七八九十]幅)/g, "\n$1")
-      .replace(/\n\n+/g, "\n\n")
+      .replace(/\n{3,}/g, "\n\n") // 限制最多只有两个连续换行
       .replace(/^\n+/, "")
       .split("\n")
       .map((line: string) => line.trim())
-      .join("\n    ");
+      .join("\n");
 
-    // 使用 <pre> 标签包装 JSON 输出
-    return `<pre>{
-  "prompt": "${formattedPrompt}",
+    // 使用自定义格式化来保持换行，并确保使用 Logseq 支持的格式
+    const formattedJson = `{
+  "prompt": """
+${formattedPrompt}
+""",
   "size": "${jsonObj.size}",
   "n": ${jsonObj.n}
-}</pre>`;
+}`;
+
+    // 使用 Markdown 代码块格式
+    return `\`\`\`json
+${formattedJson}
+\`\`\``;
   }
   return JSON.stringify(jsonObj, null, 2);
 }

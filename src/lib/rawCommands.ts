@@ -315,10 +315,8 @@ async function handleColoringBookHero2(
     const { prompt: finalPromptText, size, n } = promptObj;
     console.log(`计划生成 ${n} 幅图片`);
 
-    // 显示初始 JSON 文档，使用 pre 标签保持格式
-    result = `提示词：\n<pre>${formatJsonString(
-      promptObj
-    )}</pre>\n\n准备生成 ${n} 幅图片...\n`;
+    // 显示初始 JSON 文档
+    result = `${formatJsonString(promptObj)}\n`;
     if (insertBlock) {
       await logseq.Editor.updateBlock(insertBlock.uuid, result);
     }
@@ -334,9 +332,7 @@ async function handleColoringBookHero2(
       result
     );
 
-    result = `提示词：\n<pre>${formatJsonString(
-      promptObj
-    )}</pre>\n\n${processedImages.join("\n")}\n`;
+    result = `${formatJsonString(promptObj)}\n${processedImages.join("\n")}\n`;
     if (insertBlock) {
       await logseq.Editor.updateBlock(insertBlock.uuid, result);
     }
@@ -992,7 +988,7 @@ function formatJsonString(jsonObj: any): string {
 
         // 2. 处理角色描述，确保每个角色和其属性正确格式化
         const formattedContent = trimmedContent
-          .split(/--(?=[^:]+：)/) // 只在角色名前分割
+          .split(/--(?=[^:]+[：:])/) // 只在角色名前分割，同时处理中英文冒号
           .map((characterBlock: string): string => {
             if (!characterBlock.trim()) return "";
 
@@ -1000,22 +996,18 @@ function formatJsonString(jsonObj: any): string {
             const lines = characterBlock.trim().split(/\n+/);
             const characterName = lines[0];
 
-            // 将剩余的行作为属性处理
+            // 处理属性行，确保每个属性之间有空格
             const attributes = lines
               .slice(1)
               .map((line) => line.trim())
               .filter(Boolean)
-              .join("");
+              .join("")
+              // 先将所有属性连接成一行，然后在每个属性标识符（xxx：）前添加空格
+              .replace(/([^：]+)：/g, " $1：")
+              .trim(); // 移除开头可能的空格
 
-            // 在每个属性之间添加空格
-            const formattedAttributes = attributes
-              .split(/(?=[^：]+：)/)
-              .filter(Boolean)
-              .map((attr) => attr.trim())
-              .join(" ");
-
-            // 确保角色名前有--，直接连接属性
-            return `--${characterName} ${formattedAttributes}`;
+            // 确保角色名前有--，并将属性直接跟在角色名后面
+            return `--${characterName}${attributes}`;
           })
           .filter(Boolean)
           .join("\n"); // 角色之间用换行分隔
@@ -1044,7 +1036,7 @@ ${formattedPrompt}
   "n": ${jsonObj.n}
 }`;
 
-    // 使用 Markdown 代码块格式
+    // 直接返回 Markdown 代码块格式，不包含任何额外内容
     return `\`\`\`json
 ${formattedJson}
 \`\`\``;

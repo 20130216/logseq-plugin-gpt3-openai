@@ -39,7 +39,7 @@ const OpenAIDefaults = (apiKey: string): OpenAIOptions => ({
   apiKey,
   completionEngine: "gpt-4o-mini",
   temperature: 1.0,
-  maxTokens: 4000,
+  maxTokens: 8000,
   dalleImageSize: "1024",
   dalleModel: "dall-e-3",
   dalleQuality: "standard",
@@ -806,7 +806,7 @@ export async function openAIWithStreamGptsToml(
         let result = "";
         let currentParagraph = "";
         let tokenCount = 0;
-        const maxTokens = Number(options.maxTokens) || 4000;
+        const maxTokens = Number(options.maxTokens) || 8000;
 
         const readStream = async (): Promise<any> => {
           try {

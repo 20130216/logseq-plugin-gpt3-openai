@@ -25,7 +25,6 @@ export const SENSITIVE_WORDS: SensitiveWordType = {
       "傻逼",
       "妈的",
       "操",
-      "草",
       "艹",
       "滚",
       "去死",

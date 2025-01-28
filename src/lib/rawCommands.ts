@@ -668,8 +668,92 @@ function buildImagePrompts(finalPromptText: string, size: string, n: number) {
   });
 }
 
-// 主函数重构后的版本
+// 处理纯文本命令的函数
 export async function createRunGptsTomlCommand(command: Command) {
+  return async (b: IHookEvent) => {
+    try {
+      console.log("开始处理纯文本命令:", command.name);
+
+      // 获取和验证设置
+      const openAISettings = await ResourceOptimizer.getResource(
+        "openai-settings"
+      );
+      console.log("获取到的 OpenAI 设置:", openAISettings);
+
+      await validateSettings(openAISettings);
+
+      // 获取和验证当前块
+      const currentBlock = await logseq.Editor.getBlock(b.uuid);
+      if (!currentBlock) {
+        throw new Error("No current block");
+      }
+
+      if (currentBlock.content.trim().length === 0) {
+        showMessage("Empty Content", "warning");
+        console.warn("Blank page");
+        return;
+      }
+
+      // 内容验证
+      try {
+        await validateContent(currentBlock.content);
+      } catch (error: any) {
+        if (error.type) {
+          let message = error.message;
+          if (message.includes("----")) {
+            message = message.split("----")[0].trim();
+          }
+          showMessage(message, error.level === "extreme" ? "error" : "warning");
+          return;
+        }
+        throw error;
+      }
+
+      // 初始化结果
+      let result = "";
+      const insertBlock = await logseq.Editor.insertBlock(
+        currentBlock.uuid,
+        result,
+        {
+          sibling: false,
+        }
+      );
+
+      const finalPrompt = command.prompt + currentBlock.content;
+      // console.log("构建的最终提示词:", finalPrompt);
+
+      // 纯文本命令直接使用 openAIWithStreamGptsToml
+      await openAIWithStreamGptsToml(
+        finalPrompt,
+        openAISettings,
+        async (content: string) => {
+          // console.log("收到内容:", content);
+          result += content;
+          if (insertBlock) {
+            await logseq.Editor.updateBlock(insertBlock.uuid, result);
+          }
+        },
+        () => {
+          console.log("onError 回调被触发");
+        },
+        () => {
+          console.log("onStop 回调被触发");
+        }
+      );
+
+      if (!result) {
+        showMessage("No OpenAI content", "warning");
+        return;
+      }
+    } catch (error: any) {
+      console.error("执行错误:", error);
+      handleOpenAIError(error);
+    }
+  };
+}
+
+// 处理绘图命令的函数
+export async function createRunGptsTomlCommandHero(command: Command) {
   return async (b: IHookEvent) => {
     try {
       // 获取和验证设置
@@ -717,9 +801,9 @@ export async function createRunGptsTomlCommand(command: Command) {
 
       const finalPrompt = command.prompt + currentBlock.content;
 
-      // 根据命令类型选择处理流程
+      // 根据 isParseJson 选择处理流程
       if (command.isParseJson) {
-        // 处理 JSON 解析流程
+        // JSON 解析流程
         let fullResponse = "";
         await openAIWithStreamGptsToml(
           finalPrompt,
@@ -745,7 +829,7 @@ export async function createRunGptsTomlCommand(command: Command) {
           }
         );
       } else {
-        // 处理普通图片生成流程
+        // 普通绘图流程
         result = await handleColoringBookHero(
           finalPrompt,
           openAISettings,

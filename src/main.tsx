@@ -4,9 +4,9 @@ import { openAIWithStream } from "./lib/openai";
 import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { Command, LogseqAI } from "./ui/LogseqAI";
-import { loadUserCommands, loadBuiltInCommands, loadBuiltInGptsTomlCommands } from "./lib/prompts";
+import { loadUserCommands, loadBuiltInCommands, loadBuiltInGptsTomlCommands, loadBuiltInGptsHeroCommands } from "./lib/prompts";
 import { getOpenaiSettings, settingsSchema } from "./lib/settings";
-import { createRunGptsTomlCommand, runDalleBlock, runGptBlock, runGptPage, runGptsID, runWhisper } from "./lib/rawCommands";
+import { createRunGptsTomlCommand, createRunGptsTomlCommandHero, runDalleBlock, runGptBlock, runGptPage, runGptsID, runWhisper } from "./lib/rawCommands";
 import { handleOpenAIError } from "./lib/types/errors";
 import { BlockEntity, IHookEvent } from "@logseq/libs/dist/LSPlugin.user";
 import { useImmer } from 'use-immer';
@@ -67,6 +67,7 @@ const defaultAppState: AppState = {
 const LogseqApp = () => {
   const [builtInCommands, setBuiltInCommands] = useState<Command[]>([]);
   const [builtInGptsTomlCommands, setBuiltInGptsTomlCommands] = useState<Command[]>([]);
+  const [builtInGptsHeroCommands, setBuiltInGptsHeroCommands] = useState<Command[]>([]);
   const [userCommands, setUserCommands] = useState<Command[]>([]);
   const [appState, updateAppState] = useImmer<AppState>(defaultAppState);
 
@@ -107,7 +108,48 @@ const LogseqApp = () => {
     loadBuiltInGptsTomlCommandsAsync();
   }, []);
 
-  // 把内置在 prompts-gpts.toml 文件中的命令转化为commands数组后，注册成 “斜杠和菜单栏”命令
+  // 加载和注册绘图相关命令
+  useEffect(() => {
+    const registerGptsHeroCommands = async () => {
+      try {
+        console.log("开始加载绘图命令...");
+        const loadedCommands = await loadBuiltInGptsHeroCommands();
+        console.log("加载到的绘图命令详情:", JSON.stringify(loadedCommands, null, 2));
+
+        if (loadedCommands && loadedCommands.length > 0) {
+          console.log(`找到 ${loadedCommands.length} 个绘图命令`);
+          for (const command of loadedCommands) {
+            try {
+              console.log(`正在注册绘图命令: ${command.name}`, {
+                type: command.type,
+                isParseJson: command.isParseJson,
+                temperature: command.temperature
+              });
+              const handler = await createRunGptsTomlCommandHero(command);
+              // 注册斜杠命令
+              logseq.Editor.registerSlashCommand(command.name, handler);
+              console.log(`已注册斜杠命令: ${command.name}`);
+              // 注册右键菜单命令
+              logseq.Editor.registerBlockContextMenuItem(command.name, handler);
+              console.log(`已注册右键菜单命令: ${command.name}`);
+            } catch (error) {
+              console.error(`注册绘图命令失败: ${command.name}`, error);
+            }
+          }
+          setBuiltInGptsHeroCommands(loadedCommands);
+          console.log("所有绘图命令注册完成");
+        } else {
+          console.warn("未找到绘图命令或加载失败");
+        }
+      } catch (error) {
+        console.error("加载绘图命令时出错:", error);
+      }
+    };
+
+    registerGptsHeroCommands();
+  }, []); // 空依赖数组，确保只在组件挂载时执行一次
+
+  // 把内置在 prompts-gpts.toml 文件中的命令转化为commands数组后，注册成 "斜杠和菜单栏"命令
   useEffect(() => {
     const registerGptsTomlCommands = async () => {
       if (builtInGptsTomlCommands.length > 0) {
@@ -119,57 +161,6 @@ const LogseqApp = () => {
     };
     registerGptsTomlCommands();
   }, [builtInGptsTomlCommands]);
-
-  // 处理快捷键
-  useEffect(() => {
-    const registerPopupShortcut = () => {
-      console.log("Registering popup shortcut...");
-      if (logseq.settings!["popupShortcut"]) {
-        logseq.App.registerCommandShortcut(
-          { binding: logseq.settings!["popupShortcut"] as string },
-          async () => {
-            console.log(`Running popup shortcut: ${logseq.settings!["popupShortcut"]}`);
-            const activeText = await logseq.Editor.getEditingCursorPosition();
-            const currentBlock = await logseq.Editor.getCurrentBlock();
-            const currentPage = await logseq.Editor.getCurrentPage();
-            const selectedBlocks = await logseq.Editor.getSelectedBlocks();
-  
-            if (selectedBlocks && selectedBlocks.length > 0) {
-              console.log("Multiple blocks selected.");
-              updateAppState(draft => {
-                draft.selection = {
-                  type: "multipleBlocksSelected",
-                  blocks: selectedBlocks,
-                };
-              });
-            } else if (!activeText && !currentPage) {
-              console.log("No valid context for shortcut.");
-              showMessage("Put cursor in block or navigate to specific page to use keyboard shortcut", "warning");
-              return;
-            } else if (activeText && currentBlock) {
-              console.log("Single block selected.");
-              updateAppState(draft => {
-                draft.selection = {
-                  type: "singleBlockSelected",
-                  block: currentBlock,
-                };
-              });
-            } else {
-              console.log("No block selected.");
-              updateAppState(draft => {
-                draft.selection = {
-                  type: "noBlockSelected",
-                };
-              });
-            }
-            openUI();
-          }
-        );
-      }
-    };
-  
-    registerPopupShortcut();
-  }, [logseq.settings]);
 
   // 注册 gpt 相关命令
   React.useEffect(() => {
@@ -596,7 +587,14 @@ registerGptsIDCommands();
 
 
   // 合并所有命令
-  const allCommands = [...builtInCommands, ...builtInGptsTomlCommands, ...userCommands];
+  const allCommands = [...builtInCommands, ...builtInGptsTomlCommands, ...builtInGptsHeroCommands, ...userCommands];
+  console.log("合并后的所有命令:", {
+    total: allCommands.length,
+    builtIn: builtInCommands.length,
+    gptsToml: builtInGptsTomlCommands.length,
+    gptsHero: builtInGptsHeroCommands.length,
+    user: userCommands.length
+  });
 
   const handleCommand = async (command: Command, onContent: (content: string) => void): Promise<string> => {
     let inputText = "";

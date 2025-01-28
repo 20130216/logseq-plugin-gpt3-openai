@@ -2,6 +2,7 @@ import { Command } from "../ui/LogseqAI";
 import toml from "toml";
 import prompts from "../prompts/prompts.toml?raw";
 import promptsGpts from "../prompts/prompts-gpts.toml?raw";
+import promptsGptsHero from "../prompts/prompts-gpts-hero.toml?raw";
 import { handleOpenAIError } from "./types/errors";
 
 //extract content from inside ```gpt-prompt codeblock
@@ -104,17 +105,31 @@ export async function loadBuiltInCommands() {
 //新增函数，专门处理这个新增的命令文件"../prompts/prompts-gpts.toml?raw"
 export async function loadBuiltInGptsTomlCommands() {
   try {
-    // 使用 toml.parse 方法解析 prompts 字符串，得到的结果是一个 JavaScript 对象
+    console.log("开始加载纯文本命令...");
     const parsedPromptsGpts: Prompts = toml.parse(promptsGpts);
-    console.log("Parsed promptsGpts:", parsedPromptsGpts); // 添加日志
-
-    // 调用 promptsToCommands 函数，将解析后的对象转换为 Command 对象数组
+    console.log("解析到的纯文本命令配置:", parsedPromptsGpts);
     const parsedCommands = promptsToCommands(parsedPromptsGpts);
-    console.log("Parsed commands:", parsedCommands); // 添加日志
-
+    console.log("转换后的纯文本命令:", parsedCommands);
     return parsedCommands;
   } catch (error: any) {
-    // 使用 handleOpenAIError 统一处理错误
+    console.error("加载纯文本命令时出错:", error);
+    handleOpenAIError(error);
+    return [];
+  }
+}
+
+// 加载绘图相关命令
+export async function loadBuiltInGptsHeroCommands() {
+  try {
+    console.log("开始加载绘图命令...");
+    console.log("原始 TOML 内容:", promptsGptsHero);
+    const parsedPromptsGptsHero: Prompts = toml.parse(promptsGptsHero);
+    console.log("解析到的绘图命令配置:", parsedPromptsGptsHero);
+    const parsedCommands = promptsToCommands(parsedPromptsGptsHero);
+    console.log("转换后的绘图命令:", parsedCommands);
+    return parsedCommands;
+  } catch (error: any) {
+    console.error("加载绘图命令时出错:", error);
     handleOpenAIError(error);
     return [];
   }
